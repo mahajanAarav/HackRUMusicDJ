@@ -30,3 +30,8 @@ An array of these is also accepted. Guests who have not opted in are rejected wi
   `0.7 * dPulse/10 + 0.3 * dBreathing/3` (positive = pulse/breathing rose, negative = fell).
   It is goal-free: there are no hype/wind-down modes. Gemini decides from the guests' inputs whether "up" or "down" was right.
 - Repeats: the server rejects any song already queued/played/skipped (matching title variants, same video id) and any artist used in the last 4 tracks.
+
+## Privacy of vitals
+Pulse and breathing numbers are only visible to the guest who scanned and to the DJ model. Public API responses carry a qualitative
+`feel` and per-song `effect` (lift / settle / steady). Public text (reason, announcement, evidence summary) is scrubbed of bpm/rpm figures,
+and the DJ's logged tool calls and results are redacted.

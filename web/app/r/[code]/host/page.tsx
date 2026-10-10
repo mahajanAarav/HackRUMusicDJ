@@ -1,13 +1,11 @@
 "use client";
 import { QRCodeSVG } from "qrcode.react";
 import { use, useCallback, useEffect, useRef, useState } from "react";
-import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { Ambient } from "@/components/Ambient";
 import { Cover } from "@/components/Cover";
 import { Equalizer } from "@/components/Equalizer";
 import { Check, Copy, Heart, Mic, Play, Skip, Sparkle, Wave } from "@/components/Icons";
 import { Segmented } from "@/components/Segmented";
-import { Sparkline } from "@/components/Sparkline";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/client";
 
@@ -247,9 +245,10 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
     }
     return out.reverse().slice(0, 6);
   })();
-  const scanSummary = snap?.scan_summary;
-  const pulseHist: number[] = snap?.recent_pulse ?? [];
-  const beat = scanSummary?.pulse ? `${60 / scanSummary.pulse}s` : "1s";
+  // Heart-rate numbers never reach this screen: the room only sees a qualitative feel.
+  const feel = snap?.feel as { n: number; trend: string } | undefined;
+  const feelText = !feel?.n ? "no scans yet" : feel.trend === "rising" ? "energy rising" : feel.trend === "falling" ? "settling down" : feel.trend === "flat" ? "holding steady" : "reading the room";
+  const impactText = (imp: any) => (imp?.effect === "lift" ? "↑ lifted the room" : imp?.effect === "settle" ? "↓ settled the room" : imp?.effect === "steady" ? "→ held steady" : null);
   const toggleTrace = (id: string) => setOpenTrace((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const vibesIn = inputs.length;
 
@@ -293,24 +292,20 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                 {leftCards.length ? leftCards.map((i) => inputCard(i)) : <div className="in-card yellow"><span className="label">waiting</span><div className="quote">drop a vibe from your phone</div></div>}
               </div>
 
-              <div className="art-wrap-outer" style={{ position: "relative" }}>
+              <div className="art-outer">
                 {matchTag && <span className={`pill ${matchTag.c} tag-float label`} style={{ fontSize: 12, padding: "5px 12px" }} key={playing?.id}>{matchTag.t}</span>}
                 <div className={`art-wrap ${playing ? "playing" : ""}`}>
-                  <div className="vinyl" />
-                  <div className="art">{playing ? <Cover title={playing.song} videoId={playing.video_id} size={270} radius={0} /> : <span className="label dim">album art</span>}</div>
+                  <div className="vinyl"><i /></div>
+                  <div className="art">{playing ? <Cover title={playing.song} videoId={playing.video_id} size={240} radius={0} /> : <span className="label dim">album art</span>}</div>
                 </div>
               </div>
 
               <div className="stage-side">
                 {rightCards.map((i) => inputCard(i))}
                 <div className="in-card teal">
-                  <div className="row" style={{ gap: 8 }}><Heart width={16} height={16} className="heart" style={{ ["--beat" as string]: beat }} /><span className="label">room pulse</span></div>
-                  {scanSummary?.n ? (
-                    <div className="quote" style={{ marginBottom: 2 }}>{Math.round(scanSummary.pulse)} bpm{scanSummary.breathing ? ` · ${scanSummary.breathing} rpm` : ""}</div>
-                  ) : (
-                    <div className="quote" style={{ fontSize: 16 }}>no pulse scans yet</div>
-                  )}
-                  <div className="by">{scanSummary?.n ? `${scanSummary.n} guest${scanSummary.n > 1 ? "s" : ""} scanned` : "scan from the pulse tab"}</div>
+                  <div className="row" style={{ gap: 8 }}><Heart width={16} height={16} className="heart" /><span className="label">room feel</span></div>
+                  <div className="quote" style={{ fontSize: feel?.n ? 19 : 16 }}>{feelText}</div>
+                  <div className="by">{feel?.n ? `${feel.n} guest${feel.n > 1 ? "s" : ""} scanned` : "scan from the pulse tab"}</div>
                 </div>
               </div>
             </div>
@@ -389,22 +384,69 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
               <span className="mono small" style={{ fontWeight: 700 }}>{curE} → aiming for {nextE}</span>
             </div>
 
-            {history.length > 0 && (
+            <div className="widgets">
+              <div className="box chart">
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span className="label dim">energy tonight</span><span className="tiny dim">dots = songs</span>
+                </div>
+                {energyPts.length < 2 ? <div className="spark-empty" style={{ height: 80 }}>fills in as songs queue up</div> : (
+                  <svg viewBox="0 0 300 90" preserveAspectRatio="none" style={{ marginTop: 6 }}>
+                    <line x1="0" y1="85" x2="300" y2="85" stroke="#14131c" strokeOpacity=".2" strokeWidth="2" />
+                    <polyline fill="none" stroke="#f05a38" strokeWidth="3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" points={energyPts.map((v, i) => `${10 + (i / (energyPts.length - 1)) * 280},${80 - v * 70}`).join(" ")} />
+                    {energyPts.map((v, i) => <circle key={i} cx={10 + (i / (energyPts.length - 1)) * 280} cy={80 - v * 70} r="5" fill={i === Math.max(0, energyPts.length - 1 - upcoming.length) ? "#f2bf45" : "#fff"} stroke="#14131c" strokeWidth="2.5" />)}
+                  </svg>
+                )}
+              </div>
+
+              <div className="box">
+                <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+                  <span className="label dim">who’s been heard</span>
+                  {boost && boost[1] < maxHeard && <span className="pill sm pink">{nameOf(boost[0])} gets the next boost</span>}
+                </div>
+                {heardList.length === 0 ? <div className="small dim">fills in as guests send vibes.</div> : (
+                  <div className="heard">
+                    {heardList.map(([g, n]) => (
+                      <div className="col1" key={g}>
+                        <div className="bar" style={{ height: `${Math.max(12, (n / maxHeard) * 100)}%`, background: colorOf(g) }} title={`${n} picks shaped`} />
+                        <span className="tiny" style={{ fontWeight: 800 }}>{nameOf(g)[0]?.toUpperCase()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="box">
                 <div className="label dim" style={{ marginBottom: 6 }}>played tonight</div>
-                {history.slice(0, 6).map((q) => {
+                {history.length === 0 && <div className="small dim">nothing yet.</div>}
+                {history.slice(0, 4).map((q) => {
                   const imp = snap?.impacts?.find((x: any) => x.queue_id === q.id);
                   return (
                     <div className="list-row" key={q.id}>
-                      <Cover title={q.song} videoId={q.video_id} size={36} />
+                      <Cover title={q.song} videoId={q.video_id} size={34} />
                       <div className="grow"><div className="ellipsis" style={{ fontWeight: 700 }}>{q.song}</div><div className="small mut ellipsis">{q.artist}</div></div>
-                      {imp?.score != null && <span className="chip acc">{imp.delta?.pulse != null ? `${imp.delta.pulse > 0 ? "↑" : "↓"} ${Math.abs(Math.round(imp.delta.pulse))} bpm` : imp.score > 0 ? "↑ rising" : "↓ falling"}</span>}
+                      {impactText(imp) && <span className="chip acc">{impactText(imp)}</span>}
                       {q.status === "skipped" && <span className="chip err">skipped</span>}
                     </div>
                   );
                 })}
               </div>
-            )}
+
+              <div className="box">
+                <div className="label dim" style={{ marginBottom: 8 }}>in the room · {realGuests.length}</div>
+                <div className="row wrap" style={{ gap: 6 }}>
+                  {realGuests.length === 0 && <span className="small dim">waiting for the first guest…</span>}
+                  {realGuests.map((g) => <span className="pill sm" key={g.id}>{av(g.id)}{g.name}</span>)}
+                </div>
+                {inputs.some((i) => i.kind === "artist") && (
+                  <>
+                    <div className="label dim" style={{ margin: "12px 0 6px" }}>suggested artists</div>
+                    <div className="row wrap" style={{ gap: 6 }}>{inputs.filter((i) => i.kind === "artist").map((a) => <span className="pill sm teal" key={a.id}>🎤 {a.text}</span>)}</div>
+                  </>
+                )}
+                <button className="btn sm" style={{ marginTop: 12 }} onClick={async () => setRecap((await api(`/rooms/${code}/recap`, {})).recap)}><Sparkle width={13} height={13} /> night recap</button>
+                {recap && <p className="small" style={{ marginTop: 10, animation: "fadeUp .4s both" }}>{recap}</p>}
+              </div>
+            </div>
           </div>
 
           {/* ================= right column ================= */}
@@ -435,7 +477,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
 
             <div className="box">
               <div className="label dim" style={{ marginBottom: 8 }}>dj brain</div>
-              <div className="brain">
+              <div className="brain brain-scroll">
                 {runs.length === 0 && <div className="ln dim">decisions show up here as the dj makes them.</div>}
                 {busy && <div className="ln hot">thinking…</div>}
                 {runs.map((r) => (
@@ -470,25 +512,12 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
               )}
             </div>
 
-            <div className="box chart">
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <span className="label dim">energy tonight</span><span className="tiny dim">dots = songs</span>
-              </div>
-              {energyPts.length < 2 ? <div className="spark-empty" style={{ height: 80 }}>fills in as songs queue up</div> : (
-                <svg viewBox="0 0 300 90" preserveAspectRatio="none" style={{ marginTop: 6 }}>
-                  <line x1="0" y1="85" x2="300" y2="85" stroke="#14131c" strokeOpacity=".2" strokeWidth="2" />
-                  <polyline fill="none" stroke="#f05a38" strokeWidth="3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" points={energyPts.map((v, i) => `${10 + (i / (energyPts.length - 1)) * 280},${80 - v * 70}`).join(" ")} />
-                  {energyPts.map((v, i) => <circle key={i} cx={10 + (i / (energyPts.length - 1)) * 280} cy={80 - v * 70} r="5" fill={i === Math.max(0, energyPts.length - 1 - upcoming.length) ? "#f2bf45" : "#fff"} stroke="#14131c" strokeWidth="2.5" />)}
-                </svg>
-              )}
-            </div>
-
             <div className="box">
               <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
                 <span className="label dim">live inputs</span><span className="tiny dim">newest first</span>
               </div>
               {inputs.length === 0 && <div className="small dim">nothing yet. scan the code and send a vibe.</div>}
-              {[...inputs].reverse().slice(0, 6).map((i, k) => (
+              {[...inputs].reverse().slice(0, 4).map((i, k) => (
                 <div className={`input-row ${k === 0 && nowTick - i.created_at < 20000 ? "new" : ""}`} key={i.id}>
                   {av(i.guest_id, true)}
                   <div className="grow" style={{ minWidth: 0 }}>
@@ -498,29 +527,6 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                   <span className="tiny dim">{ago(nowTick - i.created_at)}</span>
                 </div>
               ))}
-            </div>
-
-            <div className="box">
-              <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
-                <span className="label dim">pulse scans</span><span className="pill sm">{scanSummary?.n ?? 0} scanned</span>
-              </div>
-              {(scanSummary?.n ?? 0) === 0 ? (
-                <div className="empty-scan">no pulse scans yet. a guest opens the pulse tab and scans with their camera. until then the dj goes by what guests tell it.</div>
-              ) : (
-                <>
-                  <div className="row" style={{ gap: 8 }}>
-                    <div className="vital"><div className="tiny mut">pulse</div><b><AnimatedNumber value={scanSummary.pulse} /></b><span className="tiny dim">bpm</span></div>
-                    <div className="vital"><div className="tiny mut">breathing</div><b><AnimatedNumber value={scanSummary.breathing} decimals={1} /></b><span className="tiny dim">rpm</span></div>
-                  </div>
-                  <div style={{ margin: "12px 0 4px" }}><Sparkline values={pulseHist} /></div>
-                  {(snap?.scans ?? []).map((sc: any) => (
-                    <div className="list-row" key={sc.guest_id}>
-                      {av(sc.guest_id)}<span className="grow ellipsis">{sc.name}</span>
-                      <span className="small mut">{Math.round(sc.pulse_bpm)} bpm</span><span className="tiny dim">{ago(sc.age_s * 1000)}</span>
-                    </div>
-                  ))}
-                </>
-              )}
             </div>
 
             <div className="box">
@@ -542,38 +548,6 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
               })}
             </div>
 
-            <div className="box">
-              <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-                <span className="label dim">who’s been heard</span>
-                {boost && boost[1] < maxHeard && <span className="pill sm pink">{nameOf(boost[0])} gets the next boost</span>}
-              </div>
-              {heardList.length === 0 ? <div className="small dim">fills in as guests send vibes.</div> : (
-                <div className="heard">
-                  {heardList.map(([g, n]) => (
-                    <div className="col1" key={g}>
-                      <div className="bar" style={{ height: `${Math.max(12, (n / maxHeard) * 100)}%`, background: colorOf(g) }} title={`${n} picks shaped`} />
-                      <span className="tiny" style={{ fontWeight: 800 }}>{nameOf(g)[0]?.toUpperCase()}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="box">
-              <div className="label dim" style={{ marginBottom: 8 }}>in the room · {realGuests.length}</div>
-              <div className="row wrap" style={{ gap: 6 }}>
-                {realGuests.length === 0 && <span className="small dim">waiting for the first guest…</span>}
-                {realGuests.map((g) => <span className="pill sm" key={g.id}>{av(g.id)}{g.name}{g.sensing ? " ●" : ""}</span>)}
-              </div>
-              {inputs.some((i) => i.kind === "artist") && (
-                <>
-                  <div className="label dim" style={{ margin: "12px 0 6px" }}>suggested artists</div>
-                  <div className="row wrap" style={{ gap: 6 }}>{inputs.filter((i) => i.kind === "artist").map((a) => <span className="pill sm teal" key={a.id}>🎤 {a.text}</span>)}</div>
-                </>
-              )}
-              <button className="btn sm" style={{ marginTop: 12 }} onClick={async () => setRecap((await api(`/rooms/${code}/recap`, {})).recap)}><Sparkle width={13} height={13} /> night recap</button>
-              {recap && <p className="small" style={{ marginTop: 10, animation: "fadeUp .4s both" }}>{recap}</p>}
-            </div>
           </div>
         </div>
       </div>

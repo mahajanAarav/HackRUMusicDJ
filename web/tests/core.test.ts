@@ -70,7 +70,7 @@ describe("agent guardrails", () => {
   it("never trusts a model-supplied video_id: it resolves the video itself", async () => {
     const item = {
       song: "Levels", artist: "Avicii", video_id: "made-up", reason: "r", influenced_by: [],
-      physiological_evidence: { metric: "pulse", summary: "s" }, announcement: "a", energy: 0.9,
+      physiological_evidence: { metric: "pulse", summary: "s" }, announcement: "a", energy: 0.9, has_vocals: true,
     };
     let i = 0;
     const llm: LlmClient = {
@@ -153,7 +153,7 @@ import { repeatReason, normTitle, normArtist } from "../lib/dj/repeats";
 import type { QueueItem } from "../lib/types";
 const qi = (song: string, artist: string, n: number, video_id = `v${n}`): QueueItem => ({
   id: `q${n}`, status: "played", added_at: n, song, artist, video_id, reason: "", influenced_by: [],
-  physiological_evidence: { metric: "pulse", summary: "" }, announcement: "", energy: 0.5,
+  physiological_evidence: { metric: "pulse", summary: "" }, announcement: "", energy: 0.5, has_vocals: true,
 });
 describe("repeat protection", () => {
   it("normalizes titles and artists", () => {
@@ -214,5 +214,61 @@ describe("suggested artists", () => {
     expect(firstMessage).toContain("Kendrick Lamar");
     expect(res.added[0].artist).toBe("Kendrick Lamar");
     expect(res.added[0].artist_basis).toBe("suggested");
+  });
+});
+
+import { publicRoom, publicTrace, safeToolArgs, stripVitals } from "../lib/dj/privacy";
+describe("privacy and vocals", () => {
+  it("strips pulse and breathing numbers from public text", () => {
+    expect(stripVitals("Aarav's pulse check (70.5 bpm, breathing 6 rpm) shows the room easing")).not.toMatch(/\d/);
+    expect(stripVitals("pulse is 72 and heart rate of 80 bpm")).not.toMatch(/\d/);
+    expect(stripVitals("the room is settling, lovely energy")).toBe("the room is settling, lovely energy");
+  });
+  it("redacts other guests' readings from traces sent to browsers", () => {
+    const t = publicTrace([{ id: "1", ts: 1, kind: "tool_result", name: "get_vitals_trend", result: { latest_scans: [{ pulse_bpm: 70 }] } }]);
+    expect(JSON.stringify(t)).not.toContain("70");
+  });
+  it("never stores pulse numbers on a queued item", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const item = { song: "Levels", artist: "Avicii", reason: "Room pulse at 84 bpm and rising", influenced_by: [], physiological_evidence: { metric: "pulse", current: 84, baseline: 70, delta: 14, summary: "pulse 84 bpm vs 70 bpm" }, announcement: "Next up: Levels", energy: 0.9, has_vocals: true };
+    let i = 0;
+    const llm: LlmClient = { async generate() { const parts: Content["parts"] = i++ === 0 ? [{ functionCall: { name: "update_queue", args: { action: "add", item } } }] : [{ text: "ok" }]; return { content: { role: "model", parts }, functionCalls: parts!.flatMap((p) => (p.functionCall ? [p.functionCall] : [])), text: parts![0].text }; } };
+    const res = await runDj(store, room.code, { llm });
+    expect(JSON.stringify(res.added[0])).not.toMatch(/\b84\b|\b70\b/);
+    expect(res.added[0].physiological_evidence.delta).toBeUndefined();
+  });
+  it("rejects songs without vocals", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const item = { song: "Weightless", artist: "Marconi Union", reason: "calm", influenced_by: [], physiological_evidence: { metric: "pulse", summary: "none" }, announcement: "Next up", energy: 0.1, has_vocals: false };
+    let i = 0;
+    const llm: LlmClient = { async generate() { const parts: Content["parts"] = i++ === 0 ? [{ functionCall: { name: "update_queue", args: { action: "add", item } } }] : [{ text: "ok" }]; return { content: { role: "model", parts }, functionCalls: parts!.flatMap((p) => (p.functionCall ? [p.functionCall] : [])), text: parts![0].text }; } };
+    const res = await runDj(store, room.code, { llm });
+    expect(res.added).toHaveLength(0);
+    expect(res.trace.some((t) => t.kind === "tool_result" && JSON.stringify(t.result).includes("vocals"))).toBe(true);
+  });
+});
+
+describe("nothing numeric leaks through traces or the room object", () => {
+  it("scrubs the model's logged update_queue args", () => {
+    const args = safeToolArgs("update_queue", { action: "add", item: { song: "S", artist: "A", reason: "pulse at 136 bpm", announcement: "go", physiological_evidence: { metric: "pulse", current: 136.5, baseline: 70, delta: 66, summary: "136 bpm vs 70 bpm" } } });
+    expect(JSON.stringify(args)).not.toMatch(/136|\b70\b|\b66\b/);
+  });
+  it("hides pulse-check results from the public room", () => {
+    const room = publicRoom({ code: "ABCD", name: "x", vitals_source: "live", created_at: 1, pulse_check: { guest_id: "g", started_at: 1, duration_s: 20, result: { pulse_bpm: 136, breathing_rpm: 27, valence: null, n_samples: 5 } } });
+    expect(JSON.stringify(room)).not.toMatch(/136|pulse_check/);
+  });
+  it("end to end: a DJ run on a room with real-looking scans leaks no numbers in its trace", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Ava", { sensing: true });
+    const t = Date.now();
+    await store.addReadings(room.code, [0, 1, 2, 3, 4, 5].map((k) => ({ guest_id: g.id, timestamp: new Date(t - 30000 + k * 5000).toISOString(), pulse_bpm: 137 + k, breathing_rpm: 29, expression: null, confidence: 0.4, source: "webcam" as const })));
+    const { MockLlm } = await import("../lib/gemini/mock-llm");
+    const res = await runDj(store, room.code, { llm: new MockLlm() });
+    expect(res.added.length).toBe(1);
+    expect(JSON.stringify(res.trace)).not.toMatch(/\b13[7-9]\b|\b14[0-2]\b|\b29\b|latest_scans/);
+    expect(JSON.stringify(res.added)).not.toMatch(/\b13[7-9]\b|\b14[0-2]\b|\b29\b/);
   });
 });

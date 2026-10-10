@@ -56,6 +56,8 @@ export interface QueueItemDraft {
   physiological_evidence: Evidence;
   announcement: string;
   energy: number; // 0 calm .. 1 intense
+  /** The song has sung or rapped lyrics. Instrumentals are never played. */
+  has_vocals: boolean;
   /** Why this artist: a guest suggested them, they sound like one that was suggested, or they simply fit the vibe. */
   artist_basis?: "suggested" | "similar" | "vibe";
   similar_to?: string; // the suggested artist this one resembles, when artist_basis = "similar"

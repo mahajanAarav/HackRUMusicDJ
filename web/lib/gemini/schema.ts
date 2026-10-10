@@ -17,6 +17,7 @@ export const QueueItemDraftSchema = z.object({
   }),
   announcement: z.string().min(1).max(90),
   energy: z.number().min(0).max(1),
+  has_vocals: z.boolean(),
   artist_basis: z.enum(["suggested", "similar", "vibe"]).optional(),
   similar_to: z.string().optional(),
 });
@@ -57,8 +58,9 @@ export const queueItemJsonSchema = {
     },
     announcement: { type: "string", description: "Spoken aloud. MAX 10 words, e.g. \"Next up: Levels by Avicii.\" No explanation: the reason is shown on screen, never spoken." },
     energy: { type: "number", description: "Your estimate of the track's intensity: 0 = very calm, 1 = very intense." },
+    has_vocals: { type: "boolean", description: "true only if the song has sung or rapped lyrics. Never pick instrumentals, classical, ambient, or lyric-free beats." },
     artist_basis: { type: "string", enum: ["suggested", "similar", "vibe"], description: "suggested = by an artist a guest named; similar = by an artist who sounds like a suggested one; vibe = chosen purely from the vibe." },
     similar_to: { type: "string", description: "When artist_basis is similar: the suggested artist this one resembles." },
   },
-  required: ["song", "artist", "reason", "influenced_by", "physiological_evidence", "announcement", "energy"],
+  required: ["song", "artist", "reason", "influenced_by", "physiological_evidence", "announcement", "energy", "has_vocals"],
 } as const;

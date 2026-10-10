@@ -1,5 +1,6 @@
 import type { Store } from "../db/store";
 import { endCurrent } from "../dj/playback";
+import { stripVitals } from "../dj/privacy";
 import { repeatReason, usedList } from "../dj/repeats";
 import { searchTrack } from "../music/youtube";
 import type { QueueItem, Room } from "../types";
@@ -125,6 +126,7 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
           if (!parsed.success) return { error: "Invalid item", issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
           const item = parsed.data;
           if (queue.filter((x) => x.status === "queued").length >= MAX_QUEUE) return { error: `Queue is full (${MAX_QUEUE} upcoming). Remove a stale track with update_queue(action="remove") first.` };
+          if (!item.has_vocals) return { error: "Only songs with sung or rapped lyrics are allowed. Pick a song with vocals, not an instrumental." };
           const early = repeatReason(item, queue);
           if (early) return { error: early };
           // Never trust a model-supplied id: use one search_track returned, otherwise look the song up ourselves.
@@ -137,7 +139,15 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
           }
           const late = repeatReason({ ...item, video_id: videoId }, queue); // same video under a different title
           if (late) return { error: late };
-          const added = await store.addQueueItem(code, { ...item, video_id: videoId });
+          // Privacy: nothing numeric about anyone's pulse or breathing is stored on a public-facing item.
+          const safe = {
+            ...item,
+            video_id: videoId,
+            reason: stripVitals(item.reason),
+            announcement: stripVitals(item.announcement),
+            physiological_evidence: { metric: item.physiological_evidence.metric, summary: stripVitals(item.physiological_evidence.summary) },
+          };
+          const added = await store.addQueueItem(code, safe);
           ctx.added.push(added);
           return { ok: true, queue_id: added.id };
         }

@@ -6,6 +6,7 @@ import { GroqLlm } from "./groq";
 import { GeminiLlm, type LlmClient } from "./llm";
 import { MockLlm } from "./mock-llm";
 import { systemPrompt } from "./prompts";
+import { publicTrace, safeToolArgs, stripVitals } from "../dj/privacy";
 import { normArtist, usedList } from "../dj/repeats";
 import { executeTool, type ToolCtx } from "./tools";
 
@@ -151,13 +152,13 @@ export async function runDj(
       }
       contents.push(res.content);
       if (!res.functionCalls.length) {
-        if (res.text) await log({ kind: "model_text", text: res.text });
+        if (res.text) await log({ kind: "model_text", text: stripVitals(res.text) });
         break;
       }
       const responseParts: Part[] = [];
       for (const fc of res.functionCalls) {
         const args = (fc.args ?? {}) as Record<string, unknown>;
-        await log({ kind: "tool_call", name: fc.name, args });
+        await log({ kind: "tool_call", name: fc.name, args: safeToolArgs(fc.name!, args) });
         const result = await executeTool(ctx, fc.name!, args);
         await log({ kind: "tool_result", name: fc.name, result: summarize(result) });
         responseParts.push({ functionResponse: { name: fc.name, response: result as Record<string, unknown> } });
@@ -186,7 +187,7 @@ export async function runDj(
       result: { queue_id: item.id, song: item.song, artist: item.artist, reason: item.reason, influenced_by: item.influenced_by, evidence: item.physiological_evidence.summary },
     });
   }
-  const trace = await store.listTrace(code, startedAt - 1);
+  const trace = publicTrace(await store.listTrace(code, startedAt - 1));
   return { added: ctx.added, skipped: ctx.skipped, trace, error };
 }
 

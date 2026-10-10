@@ -25,5 +25,8 @@ export async function searchTrack(title: string, artist: string): Promise<TrackH
   const res = await fetch(url);
   if (!res.ok) throw new Error(`YouTube search failed: ${res.status} ${await res.text()}`);
   const data = (await res.json()) as { items?: { id: { videoId: string }; snippet: { title: string; channelTitle: string } }[] };
-  return (data.items ?? []).map((i) => ({ video_id: i.id.videoId, title: i.snippet.title, channel: i.snippet.channelTitle, playable: true }));
+  const hits = (data.items ?? []).map((i) => ({ video_id: i.id.videoId, title: i.snippet.title, channel: i.snippet.channelTitle, playable: true }));
+  // Prefer the real song over instrumental / karaoke / backing-track uploads.
+  const vocal = hits.filter((h) => !/instrumental|karaoke|backing track|no vocals|sin voz|piano version|\bcover\b/i.test(h.title));
+  return vocal.length ? vocal : hits;
 }

@@ -12,7 +12,6 @@ const CATALOG: { song: string; artist: string; energy: number; genre: Genre }[] 
   { song: "Titanium", artist: "David Guetta", energy: 0.92, genre: "edm" },
   { song: "Levels", artist: "Avicii", energy: 0.95, genre: "edm" },
   { song: "Clarity", artist: "Zedd", energy: 0.85, genre: "edm" },
-  { song: "Strobe", artist: "deadmau5", energy: 0.6, genre: "edm" },
   { song: "Blinding Lights", artist: "The Weeknd", energy: 0.85, genre: "pop" },
   { song: "Dance Monkey", artist: "Tones and I", energy: 0.75, genre: "pop" },
   { song: "Levitating", artist: "Dua Lipa", energy: 0.8, genre: "pop" },
@@ -29,12 +28,9 @@ const CATALOG: { song: string; artist: string; energy: number; genre: Genre }[] 
   { song: "Friends in Low Places", artist: "Garth Brooks", energy: 0.7, genre: "country" },
   { song: "Wagon Wheel", artist: "Darius Rucker", energy: 0.6, genre: "country" },
   { song: "Tennessee Whiskey", artist: "Chris Stapleton", energy: 0.3, genre: "country" },
-  { song: "Take Five", artist: "Dave Brubeck", energy: 0.35, genre: "jazz" },
-  { song: "So What", artist: "Miles Davis", energy: 0.3, genre: "jazz" },
   { song: "Feeling Good", artist: "Nina Simone", energy: 0.4, genre: "jazz" },
   { song: "Put Your Records On", artist: "Corinne Bailey Rae", energy: 0.4, genre: "chill" },
   { song: "Banana Pancakes", artist: "Jack Johnson", energy: 0.3, genre: "chill" },
-  { song: "Weightless", artist: "Marconi Union", energy: 0.05, genre: "chill" },
   { song: "Holocene", artist: "Bon Iver", energy: 0.2, genre: "indie" },
   { song: "Electric Feel", artist: "MGMT", energy: 0.65, genre: "indie" },
   { song: "Dog Days Are Over", artist: "Florence + The Machine", energy: 0.8, genre: "indie" },
@@ -43,8 +39,6 @@ const CATALOG: { song: string; artist: string; energy: number; genre: Genre }[] 
   { song: "Bailando", artist: "Enrique Iglesias", energy: 0.75, genre: "latin" },
   { song: "Redbone", artist: "Childish Gambino", energy: 0.35, genre: "rnb" },
   { song: "Get Lucky", artist: "Daft Punk", energy: 0.7, genre: "rnb" },
-  { song: "Clair de Lune", artist: "Claude Debussy", energy: 0.1, genre: "classical" },
-  { song: "Four Seasons: Summer", artist: "Antonio Vivaldi", energy: 0.8, genre: "classical" },
 ];
 
 const KEYWORDS: [Genre, RegExp][] = [
@@ -56,7 +50,6 @@ const KEYWORDS: [Genre, RegExp][] = [
   ["chill", /lo.?fi|chill|ambient|study/i],
   ["latin", /latin|reggaeton|salsa|bachata|spanish/i],
   ["rnb", /r&b|rnb|soul|funk/i],
-  ["classical", /classical|orchestra|piano|violin/i],
   ["indie", /indie|alternative|folk/i],
   ["pop", /\bpop\b|top 40|radio/i],
 ];
@@ -114,15 +107,16 @@ export class MockLlm implements LlmClient {
       song: pick.song,
       artist: pick.artist,
       reason: scanned
-        ? `${genres.length ? `Matching the ${pick.genre} request` : "Going with the room"}; pulse is ${e.pulse.current} bpm (${e.trend}).`
+        ? `${genres.length ? `Matching the ${pick.genre} request` : "Going with the room"}; the room's energy is ${e.trend === "rising" ? "rising" : e.trend === "falling" ? "settling" : "steady"}.`
         : `No pulse scans yet, so going by what guests asked for${genres.length ? ` (${pick.genre})` : ""}.`,
       artist_basis: byArtist.length ? "suggested" : "vibe",
       influenced_by: inputId ? [{ input_id: inputId, kind: "text", note: "Guest vibe shaped the genre and intensity." }] : [],
       physiological_evidence: scanned
-        ? { metric: "pulse", current: e.pulse.current, summary: `${e.n_guests_sensing} guest(s) scanned; pulse ${e.pulse.current} bpm, trend ${e.trend}.` }
+        ? { metric: "pulse", current: e.pulse.current, summary: `${e.n_guests_sensing} guest(s) scanned; the room's energy is ${e.trend === "rising" ? "rising" : e.trend === "falling" ? "settling" : "steady"}.` }
         : { metric: "pulse", summary: "No pulse scans yet; based on guest vibes only." },
       announcement: `Next up: ${pick.song} by ${pick.artist}.`,
       energy: pick.energy,
+      has_vocals: true,
     };
     return turn({ name: "update_queue", args: { action: "add", item } });
   }
