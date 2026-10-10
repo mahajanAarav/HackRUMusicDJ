@@ -14,7 +14,7 @@ const DURATION_S = 20;
  *                    then runs the DJ with trigger=pulse_check
  */
 export const POST = withRoom(async (req, room) => {
-  const { guest_id, action, measured } = await readJson<{ guest_id?: string; action?: "start" | "finish"; measured?: { pulse_bpm: number | null; breathing_rpm: number | null; confidence?: number; n_samples?: number } }>(req);
+  const { guest_id, action, measured } = await readJson<{ guest_id?: string; action?: "start" | "finish"; measured?: { pulse_bpm: number | null; breathing_rpm: number | null; confidence?: number; n_samples?: number; source?: "presage" | "webcam" } }>(req);
   const guest = (await store.listGuests(room.code)).find((g) => g.id === guest_id);
   if (!guest) return fail("unknown guest_id", 403);
   if (!guest.sensing) return fail("guest has not opted in to sensing", 403);
@@ -34,7 +34,7 @@ export const POST = withRoom(async (req, room) => {
     const breathing = measured.breathing_rpm != null && measured.breathing_rpm >= 4 && measured.breathing_rpm <= 40 ? measured.breathing_rpm : null;
     if (pulse == null) return fail("no usable pulse in the measurement");
     if (room.vitals_source === "live") {
-      await store.addReadings(room.code, [{ guest_id: guest.id, timestamp: new Date(now()).toISOString(), pulse_bpm: pulse, breathing_rpm: breathing, expression: null, confidence: measured.confidence ?? 0.5, source: "webcam" }]);
+      await store.addReadings(room.code, [{ guest_id: guest.id, timestamp: new Date(now()).toISOString(), pulse_bpm: pulse, breathing_rpm: breathing, expression: null, confidence: measured.confidence ?? 0.5, source: measured.source === "presage" ? "presage" : "webcam" }]);
     }
     const result = { pulse_bpm: pulse, breathing_rpm: breathing, valence: null as number | null, n_samples: measured.n_samples ?? 0 };
     await store.updateRoom(room.code, { pulse_check: { ...pc, result } });

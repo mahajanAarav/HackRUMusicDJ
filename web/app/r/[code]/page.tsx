@@ -7,6 +7,7 @@ import { Equalizer } from "@/components/Equalizer";
 import { Camera, Heart, ImageIcon, Mic, Music, Sparkle } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
 import { api, blobToWavB64, fileToJpegB64 } from "@/lib/client";
+import { installFakeNative, isNative, isSimulatedNative, runNativeScan } from "@/lib/native";
 import { RppgMeter } from "@/lib/rppg";
 
 type Snap = any;
@@ -35,6 +36,13 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
   const [camOn, setCamOn] = useState(false);
   const [liveBpm, setLiveBpm] = useState<number | null>(null);
   const toast = useToast();
+  const [native, setNative] = useState(false);
+  const [nativeSim, setNativeSim] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("fakenative")) installFakeNative();
+    setNative(isNative());
+    setNativeSim(isSimulatedNative());
+  }, []);
 
   useEffect(() => {
     try { const s = localStorage.getItem(key); if (s) setGuest(JSON.parse(s)); } catch {}
@@ -115,8 +123,33 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
     }
   }
 
+  /** Inside the iPhone app: hand the scan to the Presage SDK. Only numbers come back. */
+  async function nativePulseCheck() {
+    try {
+      await api(`/rooms/${code}/pulse-check`, { guest_id: guest!.id, action: "start" });
+      setPcOut(null);
+      setLiveBpm(null);
+      setPc(PULSE_SECONDS);
+      const r = await runNativeScan(PULSE_SECONDS, (p) => { setPc(p.seconds_left); if (p.pulse_bpm != null) setLiveBpm(p.pulse_bpm); });
+      setPc(0);
+      if (r.pulse_bpm == null) {
+        toast.show("Presage couldn't get a clean reading. Face a light, hold still, and try again.", "err");
+        return;
+      }
+      api(`/rooms/${code}/vitals`, { guest_id: guest!.id, timestamp: new Date().toISOString(), pulse_bpm: r.pulse_bpm, breathing_rpm: r.breathing_rpm, expression: null, confidence: r.confidence ?? 0.9, source: nativeSim ? "simulated" : "presage" }).catch(() => {});
+      setPcOut(await api(`/rooms/${code}/pulse-check`, { guest_id: guest!.id, action: "finish", measured: { ...r, source: nativeSim ? "webcam" : "presage" } }));
+      poll();
+    } catch (er) {
+      toast.show((er as Error).message, "err");
+    } finally {
+      setPc(null);
+      setLiveBpm(null);
+    }
+  }
+
   /** Webcam pulse check: samples the forehead for 20 s in the browser, sends only the resulting numbers. */
   async function pulseCheck() {
+    if (native) return nativePulseCheck();
     let stream: MediaStream | null = null;
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error(window.isSecureContext ? "This browser has no camera access." : "Camera needs HTTPS. Open the room through the https tunnel link the host shares.");
@@ -260,6 +293,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
             <div>
               <h1 className="g-title" style={{ margin: "4px 0 6px" }}>pulse check</h1>
               <p className="mut">look at the phone for {PULSE_SECONDS} seconds. the dj reacts to your reading.</p>
+              <span className={`pill sm ${native ? "teal" : ""}`} style={{ marginTop: 8 }}>{native ? (nativeSim ? "app test mode · simulated sensor, not presage" : "✓ measured with presage smartspectra") : "browser estimate · open in the app for presage"}</span>
             </div>
 
             <div className="box row" style={{ gap: 14 }}>
@@ -270,6 +304,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
               </div>
             </div>
             {sensing && !camOn && <div className="sense-banner"><span className="live-dot" /> sensing is on · readings only, no video stored</div>}
+            {pc !== null && native && <div className="sense-banner"><span className="live-dot" /> {nativeSim ? "test scan (simulated)" : "presage is scanning"} · only numbers are sent</div>}
             {camOn && <div className="sense-banner"><span className="live-dot" /> camera is on · only numbers are sent, no video is recorded</div>}
 
             <div className="pulse-stage">

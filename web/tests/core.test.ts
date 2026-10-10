@@ -272,3 +272,28 @@ describe("nothing numeric leaks through traces or the room object", () => {
     expect(JSON.stringify(res.added)).not.toMatch(/\b13[7-9]\b|\b14[0-2]\b|\b29\b/);
   });
 });
+
+import { resetYoutubeCache, searchTrack } from "../lib/music/youtube";
+import { vi } from "vitest";
+describe("youtube lookup", () => {
+  it("caches results so repeat songs cost no quota, and degrades to a placeholder on quota errors", async () => {
+    process.env.YOUTUBE_API_KEY = "test-key";
+    resetYoutubeCache();
+    const ok = { ok: true, status: 200, json: async () => ({ items: [{ id: { videoId: "abc123" }, snippet: { title: "Levels (Official Audio)", channelTitle: "Avicii" } }] }), text: async () => "" };
+    const fetchMock = vi.fn().mockResolvedValueOnce(ok).mockResolvedValue({ ok: false, status: 403, text: async () => '{"error":{"message":"quotaExceeded"}}' });
+    vi.stubGlobal("fetch", fetchMock);
+    const first = await searchTrack("Levels", "Avicii");
+    const again = await searchTrack("Levels (Radio Edit)", "AVICII");
+    expect(first[0].video_id).toBe("abc123");
+    expect(again[0].video_id).toBe("abc123");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const other = await searchTrack("Titanium", "David Guetta");
+    expect(other[0].playable).toBe(false);
+    expect(other[0].video_id.startsWith("mock:")).toBe(true);
+    await searchTrack("Clarity", "Zedd");
+    expect(fetchMock).toHaveBeenCalledTimes(2); // blocked after the quota error: no more wasted calls
+    vi.unstubAllGlobals();
+    delete process.env.YOUTUBE_API_KEY;
+    resetYoutubeCache();
+  });
+});

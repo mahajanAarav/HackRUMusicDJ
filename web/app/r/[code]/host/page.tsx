@@ -351,7 +351,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                       {playing && announcing ? (
                         <div className="col" style={{ alignItems: "center", gap: 8 }}><Mic width={26} height={26} /><div style={{ fontWeight: 800 }}>the dj is announcing…</div><div className="small" style={{ maxWidth: 240 }}>{playing.announcement}</div></div>
                       ) : playing?.video_id.startsWith("mock:") ? (
-                        <div><div style={{ fontWeight: 800, fontSize: 18 }}>{playing.song}</div><div>{playing.artist}</div><div className="small" style={{ marginTop: 6 }}>no youtube key · mock playback</div></div>
+                        <div><div style={{ fontWeight: 800, fontSize: 18 }}>{playing.song}</div><div>{playing.artist}</div><div className="small" style={{ marginTop: 6 }}>no video available · timer playback</div></div>
                       ) : (
                         <div><Wave width={30} height={30} /><div style={{ marginTop: 4 }}>{started ? (err ? "waiting to retry…" : "loading…") : "video appears here"}</div></div>
                       )}

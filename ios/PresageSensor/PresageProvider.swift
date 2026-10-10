@@ -2,19 +2,20 @@ import Foundation
 // import SmartSpectra   // <- add the Swift package from https://github.com/Presage-Security/SmartSpectra (swift/) and uncomment
 // import AVFoundation
 
-/// INTEGRATION POINT. Not compiled or verified against the SDK yet.
+/// INTEGRATION POINT (the one file that needs the real SDK). Not compiled or verified against the SDK yet.
 ///
-/// What the SDK docs confirm: `SmartSpectraSDK.shared`, config via `SmartSpectraConfig.breathingMetrics`
-/// and `.cardioMetrics`, `MetricType.expressions`, and a camera `start()`. Follow the iOS README's
-/// "Option 1: API key" quickstart for key setup and for how the SDK publishes metrics, then in the
-/// metrics callback/observer call:
+/// From the SDK README: `SmartSpectraSDK.shared`, metrics requested with `SmartSpectraConfig.breathingMetrics`,
+/// `SmartSpectraConfig.cardioMetrics` and `MetricType.expressions`, API key set per the "Option 1: API key"
+/// quickstart (keep the key out of git: read it from Info.plist / an xcconfig that is git-ignored),
+/// and a camera `start()`. The SDK probably brings its own SwiftUI camera view, which must be on screen while
+/// it measures: embed it inside `ScanOverlayView` (see the TODO there).
 ///
-///     onVitals?(RawVitals(pulse: <pulse bpm>, breathing: <breaths/min>,
-///                         valence: <map expression -> -1...1>, confidence: <0...1>))
+/// When the SDK publishes a metric, forward it:
 ///
-/// Notes: needs a physical iPhone (camera), NSCameraUsageDescription in Info.plist, and the key must
-/// not be committed. If the SDK exposes expressions as categories rather than a score, map them:
-/// positive -> +0.6, neutral -> 0, negative -> -0.6. Never keep or upload frames; only RawVitals leaves.
+///     onVitals?(RawVitals(pulse: <bpm>, breathing: <breaths/min>, hrv: <ms or nil>, confidence: <0...1>))
+///
+/// Rules: needs a physical iPhone (camera). Never keep or upload frames. If the SDK reports expressions as
+/// categories you can ignore them for now; the web app only needs pulse and breathing.
 final class PresageProvider: VitalsProvider {
     var onVitals: ((RawVitals) -> Void)?
     func start() { /* TODO: SmartSpectraSDK.shared ... start() */ }
