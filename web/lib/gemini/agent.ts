@@ -136,7 +136,7 @@ export async function runDj(
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       let res;
       try {
-        res = await llm.generate({ system: systemPrompt(room.dj_style), contents });
+        res = await llm.generate({ system: systemPrompt(), contents });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         const fallbackOk = msg.startsWith("RATE_LIMITED") || chain[idx].name === "Groq"; // Groq tool-call hiccups also fall through

@@ -279,7 +279,6 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
             <span className="pill sm">room {code}</span>
           </div>
           <div className="row wrap" style={{ gap: 10 }}>
-            <Segmented options={[{ value: "hype", label: "hype host" }, { value: "latenight", label: "late night radio" }, { value: "dramatic", label: "dramatic narrator" }]} value={room?.dj_style ?? "hype"} onChange={(v) => api(`/rooms/${code}`, { dj_style: v }, "PATCH").then(poll)} />
             <span className="pill">{vibesIn === 0 ? "waiting for the first vibe" : vibesIn === 1 ? "1 vibe in · the room fills in the rest" : `${vibesIn} vibes in`}</span>
           </div>
         </div>
