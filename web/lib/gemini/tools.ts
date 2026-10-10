@@ -1,5 +1,6 @@
 import type { Store } from "../db/store";
 import { endCurrent } from "../dj/playback";
+import { repeatReason, usedList } from "../dj/repeats";
 import { searchTrack } from "../music/youtube";
 import type { QueueItem, Room } from "../types";
 import { now } from "../clock";
@@ -89,7 +90,7 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
           if (!args.guest_id) return { error: "guest_id required when scope=guest" };
           readings = readings.filter((r) => r.guest_id === args.guest_id);
         }
-        const energy = computeRoomEnergy(readings, { mode: room.mode, nowMs, windowS, baseline: await currentBaseline(store, room, nowMs) });
+        const energy = computeRoomEnergy(readings, { nowMs, windowS, baseline: await currentBaseline(store, room, nowMs) });
         const impacts = (await store.listImpacts(code)).slice(-5);
         const check = room.pulse_check?.result ? { guest_id: room.pulse_check.guest_id, ...room.pulse_check.result } : undefined;
         const { scans } = await latestScans(store, code, nowMs);
@@ -110,6 +111,7 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
         const impacts = await store.listImpacts(code);
         const played = q.filter((x) => x.status === "played" || x.status === "skipped").slice(-6);
         return {
+          never_repeat_these: usedList(q),
           now_playing: q.find((x) => x.status === "playing") ? { ...brief(q.find((x) => x.status === "playing")!), started_s_ago: Math.round((now() - q.find((x) => x.status === "playing")!.started_at!) / 1000) } : null,
           upcoming: q.filter((x) => x.status === "queued").map(brief),
           recently_played: played.map((x) => ({ ...brief(x), status: x.status, impact_score: impacts.find((i) => i.queue_id === x.id)?.score ?? null })),
@@ -123,8 +125,8 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
           if (!parsed.success) return { error: "Invalid item", issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
           const item = parsed.data;
           if (queue.filter((x) => x.status === "queued").length >= MAX_QUEUE) return { error: `Queue is full (${MAX_QUEUE} upcoming). Remove a stale track with update_queue(action="remove") first.` };
-          const dupe = queue.find((x) => x.song.toLowerCase() === item.song.toLowerCase() && x.artist.toLowerCase() === item.artist.toLowerCase());
-          if (dupe) return { error: `${item.song} by ${item.artist} is already in the queue or was played. Pick something else.` };
+          const early = repeatReason(item, queue);
+          if (early) return { error: early };
           // Never trust a model-supplied id: use one search_track returned, otherwise look the song up ourselves.
           let videoId = item.video_id && ctx.seenVideos.has(item.video_id) ? item.video_id : undefined;
           if (!videoId) {
@@ -133,7 +135,9 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
             videoId = hits[0].video_id;
             hits.forEach((h) => ctx.seenVideos.set(h.video_id, { title: h.title, channel: h.channel }));
           }
-          const added = await store.addQueueItem(code, { ...item, video_id: videoId, mode: room.mode });
+          const late = repeatReason({ ...item, video_id: videoId }, queue); // same video under a different title
+          if (late) return { error: late };
+          const added = await store.addQueueItem(code, { ...item, video_id: videoId });
           ctx.added.push(added);
           return { ok: true, queue_id: added.id };
         }

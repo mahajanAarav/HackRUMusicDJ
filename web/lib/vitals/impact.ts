@@ -1,5 +1,5 @@
-import type { Mode, QueueItem, SongImpact, Triple, VitalsReading } from "../types";
-import { aggregateTriple, diff, modeScore } from "./energy";
+import type { QueueItem, SongImpact, Triple, VitalsReading } from "../types";
+import { aggregateTriple, arousalChange, diff } from "./energy";
 
 export const BASELINE_WINDOW_S = 30;
 export const SETTLE_S = 10; // ignore the first seconds of a song while vitals respond
@@ -10,12 +10,11 @@ export function computeBaseline(readings: VitalsReading[], startMs: number): Tri
   return aggregateTriple(readings, startMs - BASELINE_WINDOW_S * 1000, startMs, "mean").triple;
 }
 
-/** Smoothed in-song average vs the pre-song baseline, reduced to a mode-specific score. */
+/** Smoothed in-song average vs the pre-song baseline, reduced to a signed arousal change. */
 export function computeImpact(
   readings: VitalsReading[],
   item: Pick<QueueItem, "id" | "song" | "artist" | "baseline" | "started_at">,
   endMs: number,
-  mode: Mode,
 ): SongImpact {
   const start = item.started_at!;
   const { triple: during, samples } = aggregateTriple(readings, start + SETTLE_S * 1000, endMs, "mean");
@@ -25,12 +24,11 @@ export function computeImpact(
     breathing: diff(during.breathing, baseline.breathing),
     valence: during.valence, // valence is already signed; no baseline needed
   };
-  const score = samples >= MIN_IMPACT_SAMPLES ? modeScore(mode, delta, during.valence) : null;
+  const score = samples >= MIN_IMPACT_SAMPLES ? arousalChange(delta) : null;
   return {
     queue_id: item.id,
     song: item.song,
     artist: item.artist,
-    mode,
     baseline,
     during,
     delta,

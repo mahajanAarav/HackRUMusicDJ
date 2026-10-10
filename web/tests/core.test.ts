@@ -3,7 +3,7 @@ import type { Content } from "@google/genai";
 import { MemoryStore } from "../lib/db/memory";
 import { runDj } from "../lib/gemini/agent";
 import type { LlmClient } from "../lib/gemini/llm";
-import { aggregate, modeScore } from "../lib/vitals/energy";
+import { aggregate, arousalChange } from "../lib/vitals/energy";
 import { computeImpact } from "../lib/vitals/impact";
 import { medianFilter, smooth } from "../lib/vitals/smooth";
 import type { VitalsReading } from "../lib/types";
@@ -44,22 +44,25 @@ describe("aggregation", () => {
 });
 
 describe("impact", () => {
-  it("scores a pulse rise as positive in hype and negative in winddown", () => {
+  it("scores a pulse rise as positive arousal change and a fall as negative", () => {
     const start = 100_000;
-    const rs = Array.from({ length: 30 }, (_, i) => reading(start + i * 3000, 90));
+    const up = Array.from({ length: 30 }, (_, i) => reading(start + i * 3000, 90));
+    const down = Array.from({ length: 30 }, (_, i) => reading(start + i * 3000, 60));
     const item = { id: "q", song: "s", artist: "a", started_at: start, baseline: { pulse: 75, breathing: 14, valence: 0 } };
-    const hype = computeImpact(rs, item, start + 90_000, "hype");
-    const wind = computeImpact(rs, item, start + 90_000, "winddown");
-    expect(hype.delta.pulse).toBeCloseTo(15, 0);
-    expect(hype.score).toBeGreaterThan(0.5);
-    expect(wind.score).toBeLessThan(0);
+    const rise = computeImpact(up, item, start + 90_000);
+    const fall = computeImpact(down, item, start + 90_000);
+    expect(rise.delta.pulse).toBeCloseTo(15, 0);
+    expect(rise.score).toBeGreaterThan(0.5);
+    expect(fall.score).toBeLessThan(-0.3);
   });
   it("returns a null score without enough samples", () => {
     const item = { id: "q", song: "s", artist: "a", started_at: 0, baseline: { pulse: 75, breathing: 14, valence: 0 } };
-    expect(computeImpact([], item, 60_000, "hype").score).toBeNull();
+    expect(computeImpact([], item, 60_000).score).toBeNull();
   });
-  it("modeScore is bounded", () => {
-    expect(modeScore("hype", { pulse: 1000, breathing: 0 }, 1)).toBe(1);
+  it("arousalChange is bounded", () => {
+    expect(arousalChange({ pulse: 1000, breathing: 0 })).toBe(1);
+    expect(arousalChange({ pulse: -1000, breathing: null })).toBe(-1);
+    expect(arousalChange({ pulse: null, breathing: null })).toBeNull();
   });
 });
 
@@ -79,7 +82,7 @@ describe("agent guardrails", () => {
     const saved = process.env.YOUTUBE_API_KEY;
     delete process.env.YOUTUBE_API_KEY; // force the mock lookup
     const store = new MemoryStore();
-    const room = await store.createRoom("hype", "live");
+    const room = await store.createRoom("live");
     const res = await runDj(store, room.code, { llm });
     if (saved) process.env.YOUTUBE_API_KEY = saved;
     expect(res.added).toHaveLength(1);
@@ -121,5 +124,95 @@ describe("groq adapter", () => {
     expect(m[3].tool_call_id).toBe("call_0");
     expect(m[4].tool_call_id).toBe("call_1");
     expect(m[1].content).toContain("not visible");
+  });
+});
+
+import { latestScans } from "../lib/vitals/scans";
+describe("scan counter", () => {
+  it("counts a webcam scan whose confidence is below the Presage cutoff", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Aarav", { sensing: true });
+    const t = Date.now();
+    await store.addReadings(room.code, [{ guest_id: g.id, timestamp: new Date(t).toISOString(), pulse_bpm: 70.5, breathing_rpm: 14, expression: null, confidence: 0.3, source: "webcam" }]);
+    const res = await latestScans(store, room.code, t + 5000);
+    expect(res.summary.n).toBe(1);
+    expect(res.summary.pulse).toBe(70.5);
+  });
+  it("still ignores low-confidence Presage readings", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Aarav", { sensing: true });
+    const t = Date.now();
+    await store.addReadings(room.code, [{ guest_id: g.id, timestamp: new Date(t).toISOString(), pulse_bpm: 70, breathing_rpm: 14, expression: null, confidence: 0.3, source: "presage" }]);
+    expect((await latestScans(store, room.code, t + 5000)).summary.n).toBe(0);
+  });
+});
+
+import { repeatReason, normTitle, normArtist } from "../lib/dj/repeats";
+import type { QueueItem } from "../lib/types";
+const qi = (song: string, artist: string, n: number, video_id = `v${n}`): QueueItem => ({
+  id: `q${n}`, status: "played", added_at: n, song, artist, video_id, reason: "", influenced_by: [],
+  physiological_evidence: { metric: "pulse", summary: "" }, announcement: "", energy: 0.5,
+});
+describe("repeat protection", () => {
+  it("normalizes titles and artists", () => {
+    expect(normTitle("Levels (Original Mix) - Remastered 2011")).toBe("levels");
+    expect(normTitle("Titanium ft. Sia")).toBe("titanium");
+    expect(normArtist("David Guetta ft. Sia")).toBe("david guetta");
+    expect(normArtist("Florence + The Machine")).toBe("florence the machine");
+  });
+  it("blocks the same song in another version, regardless of age", () => {
+    const q = [qi("Levels", "Avicii", 1), ...Array.from({ length: 8 }, (_, i) => qi(`Other ${i}`, `Artist ${i}`, i + 2))];
+    expect(repeatReason({ song: "Levels (Radio Edit)", artist: "AVICII" }, q)).toMatch(/already used/);
+  });
+  it("blocks the same video id under a different title", () => {
+    expect(repeatReason({ song: "Totally New Name", artist: "Someone", video_id: "v1" }, [qi("Levels", "Avicii", 1)])).toMatch(/already used/);
+  });
+  it("blocks an artist inside the cooldown window but allows them later", () => {
+    const q = [qi("A", "Drake", 1), qi("B", "Adele", 2), qi("C", "Beyonce", 3)];
+    expect(repeatReason({ song: "New Song", artist: "Drake" }, q)).toMatch(/last 4 tracks/);
+    const later = [...q, qi("D", "Eminem", 4), qi("E", "Queen", 5), qi("F", "ABBA", 6), qi("G", "Prince", 7)];
+    expect(repeatReason({ song: "New Song", artist: "Drake" }, later)).toBeNull();
+  });
+  it("lets genuinely new songs through", () => {
+    expect(repeatReason({ song: "Brand New", artist: "Fresh Artist" }, [qi("Levels", "Avicii", 1)])).toBeNull();
+  });
+  it("the offline DJ never repeats across many picks", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Ava");
+    await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "text", text: "play some hip hop and rap" });
+    const seen = new Set<string>();
+    const artists: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const res = await runDj(store, room.code, { llm: new (await import("../lib/gemini/mock-llm")).MockLlm() });
+      if (!res.added.length) break;
+      const key = normTitle(res.added[0].song);
+      expect(seen.has(key)).toBe(false);
+      seen.add(key);
+      artists.push(normArtist(res.added[0].artist));
+      for (const q of await store.listQueue(room.code)) if (q.status === "queued") await store.updateQueueItem(room.code, q.id, { status: "played" });
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(10);
+    for (let i = 4; i < artists.length; i++) expect(artists.slice(i - 4, i)).not.toContain(artists[i]);
+  });
+});
+
+describe("suggested artists", () => {
+  it("shows suggested artists (with usage counts) to the DJ and lets the offline DJ honor them", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Ava");
+    await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "artist", text: "Kendrick Lamar" });
+    let firstMessage = "";
+    const { MockLlm } = await import("../lib/gemini/mock-llm");
+    const mock = new MockLlm();
+    const llm: LlmClient = { async generate(req) { firstMessage ||= JSON.stringify(req.contents[0]); return mock.generate(req); } };
+    const res = await runDj(store, room.code, { llm });
+    expect(firstMessage).toContain("Artists guests want to hear");
+    expect(firstMessage).toContain("Kendrick Lamar");
+    expect(res.added[0].artist).toBe("Kendrick Lamar");
+    expect(res.added[0].artist_basis).toBe("suggested");
   });
 });

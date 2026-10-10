@@ -10,7 +10,6 @@
   --r: 14px;
 }
 .app { --acc: #ff4d6d; --acc2: #ff9f1c; transition: --acc .9s var(--ease), --acc2 .9s var(--ease); min-height: 100dvh; }
-.app[data-mode="winddown"] { --acc: #4cc9f0; --acc2: #7b6cf6; }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -96,9 +95,6 @@ textarea.field { resize: none; }
 .logo-mark { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #14060a; }
 .hero-title { font-size: clamp(38px, 7vw, 64px); line-height: 1.02; font-weight: 800; letter-spacing: -.035em; margin: 18px 0 14px; }
 .grad-text { background: linear-gradient(90deg, var(--acc), var(--acc2), var(--acc)); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: gradientMove 6s linear infinite; }
-.mode-card { text-align: left; padding: 14px; border-radius: 14px; background: var(--panel2); border: 2px solid transparent; transition: border-color .25s, transform .2s var(--ease), background .2s; }
-.mode-card:hover { transform: translateY(-2px); background: var(--hover); }
-.mode-card.on { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 10%, var(--panel2)); }
 .code-box { width: 100%; aspect-ratio: 1; text-align: center; font-size: 26px; font-weight: 800; border-radius: 12px; text-transform: uppercase; }
 
 /* ---------- host shell ---------- */

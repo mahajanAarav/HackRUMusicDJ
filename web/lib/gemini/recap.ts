@@ -12,12 +12,12 @@ export async function generateRecap(store: Store, code: string): Promise<string>
   });
   if (!process.env.GEMINI_API_KEY || process.env.MOCK_LLM) {
     const best = impacts.filter((i) => i.score != null).sort((a, b) => b.score! - a.score!)[0];
-    return `Night recap (${room?.mode}): ${rows.length} tracks played.${best ? ` Biggest mover: ${best.song} by ${best.artist} (impact ${best.score}).` : ""}`;
+    return `Night recap: ${rows.length} tracks played.${best ? ` Biggest mover: ${best.song} by ${best.artist} (arousal ${best.score}).` : ""}`;
   }
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const res = await ai.models.generateContent({
     model: process.env.GEMINI_MODEL ?? "gemini-3.8-flash",
-    contents: `Write a short, fun end-of-night recap (under 120 words) for a ${room?.mode} DJ set. Use only these facts; impact is -1..1 progress toward the room's goal.\n${rows.join("\n")}`,
+    contents: `Write a short, fun end-of-night recap (under 120 words) for a DJ set. Use only these facts; impact is the room's signed arousal change (-1..1, positive = pulse/breathing rose).\n${rows.join("\n")}`,
   });
   return res.text ?? "";
 }

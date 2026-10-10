@@ -13,7 +13,7 @@ type Snap = any;
 type Guest = { id: string; name: string; sensing: boolean };
 type Tab = "vibe" | "pulse" | "queue";
 
-const QUICK = ["🔥 Hype me up", "😮‍💨 Need to calm down", "🎉 Throwback party", "💪 Power through it", "🌧️ Rainy day mood", "💃 Let's dance", "🧘 Slow it down", "☕ Caffeine in sound form"];
+const QUICK = ["🔥 Hype me up", "🎤 Hip-hop", "🎸 Rock", "🤠 Country", "💃 Latin", "🎹 Lo-fi chill", "🎷 Jazz", "🎧 EDM drop", "🌧️ Slow it down", "🎉 Throwbacks", "☕ Caffeine in sound form", "🧘 Calm me down"];
 const PULSE_SECONDS = 20;
 
 export default function Guest({ params }: { params: Promise<{ code: string }> }) {
@@ -23,6 +23,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
   const [ready, setReady] = useState(false);
   const [name, setName] = useState("");
   const [text, setText] = useState("");
+  const [artistText, setArtistText] = useState("");
   const [snap, setSnap] = useState<Snap>(null);
   const [tab, setTab] = useState<Tab>("vibe");
   const [rec, setRec] = useState<MediaRecorder | null>(null);
@@ -57,14 +58,13 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
     try { await fn(); if (okMsg) toast.show(okMsg); poll(); } catch (e) { toast.show((e as Error).message, "err"); }
   };
 
-  const mode = snap?.room?.mode ?? "hype";
   const roomName = snap?.room?.name ?? `Room ${code}`;
 
   if (!ready) return null;
 
   if (!guest)
     return (
-      <div className="app" data-mode={mode}>
+      <div className="app">
         <div className="guest-app" style={{ paddingTop: 48 }}>
           <div className="logo" style={{ marginBottom: 28 }}><span className="logo-mark"><Music /></span> Biofeedback DJ</div>
           <div className="eyebrow">You’re joining</div>
@@ -87,6 +87,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
   const upcoming = queue.filter((q) => q.status === "queued");
   const mine = (snap?.inputs ?? []).filter((i: any) => i.guest_id === guest.id);
   const myInputIds = new Set(mine.map((i: any) => i.id));
+  const roomArtists = (snap?.inputs ?? []).filter((i: any) => i.kind === "artist");
   const e = snap?.energy;
 
   const add = (body: object, okMsg = "Sent to the DJ ✨") => run(async () => void (await api(`/rooms/${code}/inputs`, { guest_id: guest.id, ...body })), okMsg);
@@ -174,13 +175,13 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
   const circ = 2 * Math.PI * 88;
 
   return (
-    <div className="app" data-mode={mode}>
+    <div className="app">
       <Ambient song={playing ? `${playing.song} ${playing.artist}` : null} energy={playing?.energy ?? 0.4} />
       <div className="guest-app">
         <div className="g-head">
           <span className="logo-mark" style={{ width: 38, height: 38, borderRadius: 12 }}><Music /></span>
           <div className="grow" style={{ minWidth: 0 }}>
-            <div className="eyebrow">{mode === "hype" ? "Hype" : "Wind-down"} · {code}</div>
+            <div className="eyebrow">Room · {code}</div>
             <div className="ellipsis" style={{ fontWeight: 800, fontSize: 18 }}>{roomName}</div>
           </div>
           <span className="chip">{guest.name}</span>
@@ -220,11 +221,27 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
               </div>
               {rec && <div className="small" style={{ color: "var(--err)" }}><span className="live-dot" /> Recording… tap the mic to send (max 15s)</div>}
             </div>
+            <div className="card col" style={{ gap: 10 }}>
+              <div>
+                <div style={{ fontWeight: 800 }}>Artists you want to hear</div>
+                <div className="small mut">The DJ will play them when they fit, plus artists that sound like them.</div>
+              </div>
+              <div className="row">
+                <input className="field grow" value={artistText} maxLength={120} placeholder="e.g. Drake, Doja Cat" onChange={(ev) => setArtistText(ev.target.value)}
+                  onKeyDown={(ev) => { if (ev.key === "Enter" && artistText.trim()) add({ kind: "artist", text: artistText }, "Artist added 🎤").then(() => setArtistText("")); }} />
+                <button className="btn primary" disabled={!artistText.trim()} onClick={() => add({ kind: "artist", text: artistText }, "Artist added 🎤").then(() => setArtistText(""))}>Add</button>
+              </div>
+              {roomArtists.length > 0 && (
+                <div className="row wrap" style={{ gap: 6 }}>
+                  {roomArtists.map((a: any) => <span className={`chip ${a.guest_id === guest.id ? "acc" : ""}`} key={a.id} style={{ animation: "pop .4s var(--ease) both" }}>🎤 {a.text}{a.guest_id !== guest.id && <span className="dim"> · {a.guest_name}</span>}</span>)}
+                </div>
+              )}
+            </div>
             {mine.length > 0 && (
               <div className="col" style={{ gap: 6 }}>
                 <div className="eyebrow">You’ve told the DJ</div>
                 <div className="row wrap" style={{ gap: 6 }}>
-                  {mine.slice(-6).map((i: any) => <span className="chip acc" key={i.id} style={{ animation: "pop .4s var(--ease) both" }}>{i.kind === "text" ? i.text : i.kind === "photo" ? "📸 photo" : "🎙️ voice note"}</span>)}
+                  {mine.slice(-6).map((i: any) => <span className="chip acc" key={i.id} style={{ animation: "pop .4s var(--ease) both" }}>{i.kind === "text" ? i.text : i.kind === "artist" ? `🎤 ${i.text}` : i.kind === "photo" ? "📸 photo" : "🎙️ voice note"}</span>)}
                 </div>
               </div>
             )}

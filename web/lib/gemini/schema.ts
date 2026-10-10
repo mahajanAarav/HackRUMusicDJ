@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const kind = z.enum(["text", "photo", "voice"]);
+const kind = z.enum(["text", "photo", "voice", "artist"]);
 
 export const QueueItemDraftSchema = z.object({
   song: z.string().min(1),
@@ -17,6 +17,8 @@ export const QueueItemDraftSchema = z.object({
   }),
   announcement: z.string().min(1).max(90),
   energy: z.number().min(0).max(1),
+  artist_basis: z.enum(["suggested", "similar", "vibe"]).optional(),
+  similar_to: z.string().optional(),
 });
 
 /** Same shape as above, as JSON Schema for the update_queue function declaration. */
@@ -35,7 +37,7 @@ export const queueItemJsonSchema = {
         properties: {
           input_id: { type: "string" },
           guest_name: { type: "string" },
-          kind: { type: "string", enum: ["text", "photo", "voice"] },
+          kind: { type: "string", enum: ["text", "photo", "voice", "artist"] },
           note: { type: "string", description: "What in that input mattered" },
         },
         required: ["input_id", "kind", "note"],
@@ -55,6 +57,8 @@ export const queueItemJsonSchema = {
     },
     announcement: { type: "string", description: "Spoken aloud. MAX 10 words, e.g. \"Next up: Levels by Avicii.\" No explanation: the reason is shown on screen, never spoken." },
     energy: { type: "number", description: "Your estimate of the track's intensity: 0 = very calm, 1 = very intense." },
+    artist_basis: { type: "string", enum: ["suggested", "similar", "vibe"], description: "suggested = by an artist a guest named; similar = by an artist who sounds like a suggested one; vibe = chosen purely from the vibe." },
+    similar_to: { type: "string", description: "When artist_basis is similar: the suggested artist this one resembles." },
   },
   required: ["song", "artist", "reason", "influenced_by", "physiological_evidence", "announcement", "energy"],
 } as const;

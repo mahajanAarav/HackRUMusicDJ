@@ -41,17 +41,22 @@ function TrackRow({ q, index, impact, playing }: { q: any; index: number; impact
         <Cover title={q.song} videoId={q.video_id} />
         <div style={{ minWidth: 0 }}>
           <div className="track-title ellipsis">{q.song}</div>
-          <div className="small mut ellipsis">{q.artist} · {q.reason}</div>
+          <div className="small mut ellipsis">{q.artist}{q.artist_basis === "suggested" ? " 🎤" : q.artist_basis === "similar" ? " ≈" : ""} · {q.reason}</div>
         </div>
         <div className="row" style={{ gap: 8 }}>
           <div style={{ width: 54 }} title={`Energy ${Math.round(q.energy * 100)}%`}><div className="meter"><i style={{ width: `${q.energy * 100}%` }} /></div></div>
-          {impact?.score != null && <span className={`chip ${impact.score > 0 ? "ok" : "warn"}`}>{impact.score > 0 ? "+" : ""}{impact.score}</span>}
+          {impact?.score != null && <span className="chip acc" title="How the room's pulse/breathing moved vs. before the song">{impact.delta?.pulse != null ? `${impact.delta.pulse > 0 ? "↑" : "↓"} ${Math.abs(Math.round(impact.delta.pulse))} bpm` : impact.score > 0 ? "↑ rising" : "↓ falling"}</span>}
           {q.status === "skipped" && <span className="chip err">skipped</span>}
         </div>
         <Chevron className="chev" width={18} height={18} />
       </button>
       <div className="track-detail"><div><div className="track-detail-inner">
         <div className="small">{q.reason}</div>
+        {q.artist_basis && q.artist_basis !== "vibe" && (
+          <div className="row" style={{ gap: 6 }}>
+            <span className={`chip ${q.artist_basis === "suggested" ? "ok" : "acc"}`}>{q.artist_basis === "suggested" ? "🎤 Suggested artist" : `≈ Similar to ${q.similar_to ?? "a suggested artist"}`}</span>
+          </div>
+        )}
         {q.influenced_by.length > 0 && (
           <div className="row wrap" style={{ gap: 6 }}>
             <span className="tiny dim">Influenced by</span>
@@ -117,7 +122,6 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   }, [poll]);
 
   const room = snap?.room;
-  const mode: "hype" | "winddown" = room?.mode ?? "hype";
   const queue: any[] = snap?.queue ?? [];
   const playing = queue.find((q) => q.status === "playing");
   const upcoming = queue.filter((q) => q.status === "queued");
@@ -233,6 +237,8 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   const joinUrl = `${origin}/r/${code}`;
   const insecure = origin.startsWith("http://") && !/^http:\/\/localhost/.test(origin);
   const realGuests = (snap?.guests ?? []).filter((g: any) => !g.simulated);
+  const artistInputs = (snap?.inputs ?? []).filter((i: any) => i.kind === "artist");
+  const playedCount = (name: string) => queue.filter((q) => q.artist.toLowerCase().includes(name.toLowerCase().split(/,|&|ft\.?|feat\.?/)[0].trim())).length;
   const simGuests = (snap?.guests ?? []).filter((g: any) => g.simulated);
   const LABELS: Record<string, string> = { start: "Opening the night", next_song: "Picking the next track", new_input: "Reacting to a new vibe", pulse_check: "Reacting to a pulse check" };
   // Group the trace into DJ runs: one trigger followed by the decisions it produced.
@@ -251,7 +257,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   const toggleTrace = (id: string) => setOpenTrace((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   return (
-    <div className="app" data-mode={mode}>
+    <div className="app">
       <Ambient song={playing ? `${playing.song} ${playing.artist}` : null} energy={playing?.energy ?? 0.4} />
       <div className="host">
         {/* ---------------- left: room ---------------- */}
@@ -259,8 +265,6 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
           <div className="logo"><span className="logo-mark"><Wave /></span> Biofeedback DJ</div>
 
           <div className="col" style={{ gap: 8 }}>
-            <div className="eyebrow">Mode</div>
-            <Segmented options={[{ value: "hype", label: "🔥 Hype" }, { value: "winddown", label: "🌙 Wind-down" }]} value={mode} onChange={(v) => api(`/rooms/${code}`, { mode: v }, "PATCH").then(poll)} />
             {dev && <><div className="eyebrow" style={{ marginTop: 6 }}>Vitals source (dev)</div>
             <Segmented options={[{ value: "live", label: "Real scans" }, { value: "simulated", label: "Simulated" }]} value={room?.vitals_source ?? "live"} onChange={(v) => api(`/rooms/${code}`, { vitals_source: v }, "PATCH").then(poll)} /></>}
           </div>
@@ -290,6 +294,14 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
             {room?.vitals_source === "simulated" && simGuests.length > 0 && <div className="tiny dim" style={{ marginTop: 4 }}>+ {simGuests.length} simulated guests feeding vitals</div>}
           </div>
 
+          <div className="col" style={{ gap: 6 }}>
+            <div className="eyebrow">🎤 Suggested artists · {artistInputs.length}</div>
+            {artistInputs.length === 0 && <div className="small dim">Guests can add artists from their phones. The DJ plays them and similar artists.</div>}
+            <div className="row wrap" style={{ gap: 6 }}>
+              {artistInputs.map((a: any) => <span className="chip acc" key={a.id} title={`Suggested by ${a.guest_name}`} style={{ animation: "pop .4s var(--ease) both" }}>{a.text}{playedCount(a.text) > 0 && <span className="dim"> · {playedCount(a.text)}</span>}</span>)}
+            </div>
+          </div>
+
           <div style={{ marginTop: "auto" }}>
             <button className="btn ghost sm" style={{ width: "100%" }} onClick={async () => setRecap((await api(`/rooms/${code}/recap`, {})).recap)}><Sparkle width={14} height={14} /> Night recap</button>
             {recap && <p className="small mut" style={{ marginTop: 10, animation: "fadeUp .4s both" }}>{recap}</p>}
@@ -299,7 +311,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
         {/* ---------------- center: now playing + queue ---------------- */}
         <section className="center">
           <div className="center-hero">
-            <div className="eyebrow">{mode === "hype" ? "Hype room" : "Wind-down room"} · {room?.code}</div>
+            <div className="eyebrow">Room · {room?.code}</div>
             <h1 className="room-title" style={{ marginTop: 6 }}>{room?.name ?? <span className="skeleton" style={{ display: "inline-block", width: 260, height: 40 }} />}</h1>
 
             <div className="hero-grid">
@@ -353,7 +365,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
             {upcoming.map((q, i) => <TrackRow key={q.id} q={q} index={i} />)}
 
             {history.length > 0 && (<>
-              <div className="section-head"><h2>Played</h2><span className="small dim">impact = change vs. pre-song baseline</span></div>
+              <div className="section-head"><h2>Played</h2><span className="small dim">pulse change vs. before each song</span></div>
               {history.slice(0, 10).map((q, i) => <TrackRow key={q.id} q={q} index={i} impact={snap?.impacts?.find((x: any) => x.queue_id === q.id)} />)}
             </>)}
           </div>

@@ -1,6 +1,6 @@
 import type { Store } from "../db/store";
 import { median } from "./smooth";
-import { MIN_CONFIDENCE } from "./energy";
+import { isUsable } from "./energy";
 
 export interface Scan {
   guest_id: string;
@@ -16,7 +16,7 @@ export const SCAN_WINDOW_MS = 10 * 60_000;
 /** Each guest's most recent real reading (camera scan) from the last 10 minutes. Nothing here is ever invented. */
 export async function latestScans(store: Store, code: string, nowMs: number): Promise<{ scans: Scan[]; summary: { pulse: number | null; breathing: number | null; n: number }; recent_pulse: number[] }> {
   const [readings, guests] = await Promise.all([store.getReadings(code, nowMs - SCAN_WINDOW_MS), store.listGuests(code)]);
-  const usable = readings.filter((r) => r.confidence >= MIN_CONFIDENCE).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+  const usable = readings.filter(isUsable).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
   const last = new Map<string, (typeof usable)[number]>();
   for (const r of usable) if (r.pulse_bpm != null) last.set(r.guest_id, r);
   const scans: Scan[] = [...last.values()].map((r) => ({

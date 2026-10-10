@@ -6,6 +6,7 @@ import { GroqLlm } from "./groq";
 import { GeminiLlm, type LlmClient } from "./llm";
 import { MockLlm } from "./mock-llm";
 import { systemPrompt } from "./prompts";
+import { normArtist, usedList } from "../dj/repeats";
 import { executeTool, type ToolCtx } from "./tools";
 
 const MAX_TURNS = 8;
@@ -36,8 +37,9 @@ export function defaultLlm(): LlmClient {
 }
 
 /** Text first, then photos and voice notes as inline parts, each labeled with its input_id. */
-function inputParts(inputs: VibeInput[]): Part[] {
+function inputParts(inputs: VibeInput[], queue: QueueItem[]): Part[] {
   const texts = inputs.filter((i) => i.kind === "text").slice(-MAX_TEXT);
+  const artists = inputs.filter((i) => i.kind === "artist");
   const photos = inputs.filter((i) => i.kind === "photo" && i.data_b64).slice(-MAX_PHOTOS);
   const voices = inputs.filter((i) => i.kind === "voice" && i.data_b64).slice(-MAX_VOICE);
   const parts: Part[] = [];
@@ -46,6 +48,13 @@ function inputParts(inputs: VibeInput[]): Part[] {
       ? "Guest text vibes:\n" + texts.map((t) => `- [input_id=${t.id}] ${t.guest_name}: "${t.text}"`).join("\n")
       : "No guest text vibes yet.",
   });
+  if (artists.length) {
+    const used = (name: string) => queue.filter((q) => normArtist(q.artist) === normArtist(name)).length;
+    parts.push({
+      text: "Artists guests want to hear (draw songs from them when they fit the vibe and the room's heartbeat, and weave in similar artists; songs already used from each in brackets):\n" +
+        artists.map((a) => `- [input_id=${a.id}] ${a.text} (suggested by ${a.guest_name}; ${used(a.text ?? "")} used)`).join("\n"),
+    });
+  }
   for (const p of photos) {
     parts.push({ text: `Photo from ${p.guest_name} [input_id=${p.id}]:` }, { inlineData: { mimeType: p.mime ?? "image/jpeg", data: p.data_b64! } });
   }
@@ -82,24 +91,34 @@ export async function runDj(
   const playing = queue.find((q) => q.status === "playing");
   const pc = room.pulse_check?.result;
   const fresh = inputs.filter((i) => i.created_at > (room.dj_seen_ts ?? 0));
+  // Alternate suggested artists with similar ones so requests get played without the set becoming a playlist of just those artists.
+  const artistNames = inputs.filter((i) => i.kind === "artist").map((i) => i.text);
+  const lastBasis = [...queue].reverse().find((q) => q.artist_basis)?.artist_basis;
+  const artistTurn = artistNames.length ? (lastBasis === "suggested" ? "similar" : "suggested") : null;
   const seenUpTo = inputs.reduce((m, i) => Math.max(m, i.created_at), room.dj_seen_ts ?? 0);
   const header = [
-    `Mode: ${room.mode.toUpperCase()}. Trigger: ${trigger}.`,
+    `Trigger: ${trigger}.`,
     `Guests: ${guests.filter((g) => !g.simulated).map((g) => g.name).join(", ") || "(none yet)"}; ${guests.filter((g) => g.sensing).length} opted in to sensing.`,
     playing ? `Now playing: ${playing.song} by ${playing.artist}.` : "Nothing is playing yet.",
     trigger === "pulse_check" && pc
       ? `A guest just did a 20-second pulse check: pulse ${pc.pulse_bpm ?? "?"} bpm, breathing ${pc.breathing_rpm ?? "?"} rpm, expression valence ${pc.valence ?? "?"} (${pc.n_samples} samples). React to it directly in your pick and mention it in the reason.`
       : "",
     queue.filter((q) => q.status === "queued").length ? `Upcoming queue has ${queue.filter((q) => q.status === "queued").length} track(s); use get_queue to see them.` : "",
+    artistTurn === "suggested"
+      ? `ARTIST TURN: this pick should be a song BY one of the suggested artists (${artistNames.join(", ")}), choosing the one with the fewest songs used and a song that fits the vibe and heartbeat. Set artist_basis="suggested". Only if none of them fits right now, fall back to artist_basis="vibe".`
+      : artistTurn === "similar"
+        ? `ARTIST TURN: this pick should be by a DIFFERENT artist who sounds similar to one of the suggested artists (${artistNames.join(", ")}), in the same lane and fitting the vibe and heartbeat. Set artist_basis="similar" and similar_to to the suggested artist it resembles. Do not pick the suggested artists themselves this turn.`
+        : "",
     fresh.length
       ? `NEW guest input since your last decision (honor it first): ${fresh.map((i) => `[input_id=${i.id}] ${i.guest_name} (${i.kind})`).join(", ")}. If an upcoming track no longer fits, remove it and add one that does.`
       : "",
+    queue.length ? `Already used tonight (never repeat, including other versions): ${usedList(queue).join("; ")}.` : "",
     trigger === "new_input" ? "Reconsider the upcoming queue in light of the new input. Add exactly one track that honors it." : "Choose the next track.",
   ].filter(Boolean).join("\n");
 
-  await log({ kind: "trigger", text: `${trigger} (${room.mode})` });
+  await log({ kind: "trigger", text: trigger });
 
-  const contents: Content[] = [{ role: "user", parts: [{ text: header }, ...inputParts(inputs)] }];
+  const contents: Content[] = [{ role: "user", parts: [{ text: header }, ...inputParts(inputs, queue)] }];
   const ctx: ToolCtx = { store, room, seenVideos: new Map(), added: [], skipped: false, removed: [] };
   let error: string | undefined;
 
@@ -107,7 +126,7 @@ export async function runDj(
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       let res;
       try {
-        res = await llm.generate({ system: systemPrompt(room.mode), contents });
+        res = await llm.generate({ system: systemPrompt(), contents });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         const fallbackOk = msg.startsWith("RATE_LIMITED") || chain[idx].name === "Groq"; // Groq tool-call hiccups also fall through

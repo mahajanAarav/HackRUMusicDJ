@@ -109,12 +109,12 @@ export class RppgMeter {
     // breathing: smooth out the pulse, remove slow drift, search 0.1-0.5 Hz (6-30 rpm)
     const sm = movingAvg(x, Math.round(FS * 0.8));
     const drift = movingAvg(sm, Math.round(FS * 10));
-    const br = dominant(sm.map((v, i) => v - drift[i]), 0.1, 0.5, 0.005);
+    const br = dominant(sm.map((v, i) => v - drift[i]), 0.15, 0.5, 0.005); // 9-30 rpm; slower is indistinguishable from drift in 20 s
 
     const ok = p.conf >= 0.2;
     return {
       pulse_bpm: ok && p.f ? Math.round(p.f * 600) / 10 : null,
-      breathing_rpm: br.conf >= 0.2 && br.f ? Math.round(br.f * 600) / 10 : null,
+      breathing_rpm: br.conf >= 0.25 && br.f && br.f > 0.16 ? Math.round(br.f * 600) / 10 : null,
       confidence: Math.round(p.conf * 100) / 100,
       n_samples: t.length,
     };

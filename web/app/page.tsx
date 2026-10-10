@@ -10,7 +10,6 @@ const pick = () => NAMES[Math.floor(Math.random() * NAMES.length)];
 export default function Home() {
   const router = useRouter();
   const [name, setName] = useState(() => pick());
-  const [mode, setMode] = useState<"hype" | "winddown">("hype");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [code, setCode] = useState(["", "", "", ""]);
@@ -20,7 +19,7 @@ export default function Home() {
     setLoading(true);
     setErr("");
     try {
-      const r = await api("/rooms", { name, mode });
+      const r = await api("/rooms", { name });
       router.push(`/r/${r.code}/host`);
     } catch (e) {
       setErr((e as Error).message);
@@ -36,7 +35,7 @@ export default function Home() {
   const joined = code.join("");
 
   return (
-    <div className="app landing" data-mode={mode}>
+    <div className="app landing">
       <div className="orb" style={{ width: 420, height: 420, background: "var(--acc)", top: -120, left: -100 }} />
       <div className="orb" style={{ width: 380, height: 380, background: "var(--acc2)", bottom: -140, right: -80, animationDelay: "-6s" }} />
 
@@ -44,7 +43,7 @@ export default function Home() {
         <div>
           <div className="logo"><span className="logo-mark"><Wave /></span> Biofeedback DJ</div>
           <h1 className="hero-title">The DJ that <span className="grad-text">feels the room.</span></h1>
-          <p className="mut" style={{ fontSize: 17, maxWidth: 440 }}>Guests drop a vibe. Presage reads their pulse and breathing. Gemini picks the next song and tells you exactly why.</p>
+          <p className="mut" style={{ fontSize: 17, maxWidth: 440 }}>Guests drop a vibe in any genre. Pulse scans show how the room feels. Gemini picks every next song and tells you exactly why.</p>
           <div className="row wrap" style={{ marginTop: 20 }}>
             <span className="chip acc"><Heart width={13} height={13} /> Presage vitals</span>
             <span className="chip acc"><Sparkle width={13} height={13} /> Gemini agent</span>
@@ -59,18 +58,7 @@ export default function Home() {
               <input className="field grow" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="Name your room" />
               <button className="btn icon" title="Random name" onClick={() => setName(pick())}><Dice /></button>
             </div>
-            <div className="row" style={{ marginTop: 12, alignItems: "stretch" }}>
-              {([
-                ["hype", "🔥 Hype", "Chase a rising pulse and big smiles."],
-                ["winddown", "🌙 Wind-down", "Slow breathing, soften the room."],
-              ] as const).map(([v, t, d]) => (
-                <button key={v} className={`mode-card grow ${mode === v ? "on" : ""}`} onClick={() => setMode(v)}>
-                  <div style={{ fontWeight: 800 }}>{t}</div>
-                  <div className="tiny mut" style={{ marginTop: 2 }}>{d}</div>
-                </button>
-              ))}
-            </div>
-            <button className="btn primary big" style={{ width: "100%", marginTop: 16 }} disabled={loading || !name.trim()} onClick={create}>
+            <button className="btn primary big" style={{ width: "100%", marginTop: 14 }} disabled={loading || !name.trim()} onClick={create}>
               {loading ? <span className="spinner" /> : null} {loading ? "Creating…" : "Create room"}
             </button>
             {err && <p className="small" style={{ color: "var(--err)", marginTop: 8 }}>{err}</p>}

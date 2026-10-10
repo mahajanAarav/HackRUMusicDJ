@@ -1,4 +1,3 @@
-export type Mode = "hype" | "winddown";
 export type VitalsSourceKind = "simulated" | "live";
 export type Metric = "pulse" | "breathing" | "valence";
 
@@ -25,7 +24,7 @@ export interface VibeInput {
   id: string;
   guest_id: string;
   guest_name: string;
-  kind: "text" | "photo" | "voice";
+  kind: "text" | "photo" | "voice" | "artist"; // "artist": text holds an artist name the guest wants to hear
   text?: string;
   mime?: string;
   data_b64?: string; // photo (jpeg) or voice (wav); small, kept for Gemini multimodal input
@@ -35,7 +34,7 @@ export interface VibeInput {
 export interface Influence {
   input_id: string;
   guest_name?: string;
-  kind: "text" | "photo" | "voice";
+  kind: "text" | "photo" | "voice" | "artist";
   note: string;
 }
 
@@ -57,6 +56,9 @@ export interface QueueItemDraft {
   physiological_evidence: Evidence;
   announcement: string;
   energy: number; // 0 calm .. 1 intense
+  /** Why this artist: a guest suggested them, they sound like one that was suggested, or they simply fit the vibe. */
+  artist_basis?: "suggested" | "similar" | "vibe";
+  similar_to?: string; // the suggested artist this one resembles, when artist_basis = "similar"
 }
 
 export interface Triple {
@@ -68,7 +70,6 @@ export interface Triple {
 export interface QueueItem extends QueueItemDraft {
   id: string;
   status: "queued" | "playing" | "played" | "skipped";
-  mode: Mode;
   added_at: number;
   started_at?: number;
   ended_at?: number;
@@ -79,11 +80,11 @@ export interface SongImpact {
   queue_id: string;
   song: string;
   artist: string;
-  mode: Mode;
   baseline: Triple;
   during: Triple;
   delta: Triple;
-  score: number | null; // -1..1, progress toward the mode's goal; null = not enough data
+  /** Signed arousal change, -1..1: > 0 means pulse/breathing rose vs the pre-song baseline, < 0 means they fell. null = not enough data. */
+  score: number | null;
   n_samples: number;
 }
 
@@ -99,8 +100,8 @@ export interface TraceEvent {
 }
 
 export interface RoomEnergy {
-  mode: Mode;
-  score: number | null;
+  /** Signed arousal change vs baseline, -1..1 (> 0 = pulse/breathing rising). */
+  arousal_change: number | null;
   pulse: { baseline: number | null; current: number | null; delta: number | null };
   breathing: { baseline: number | null; current: number | null; delta: number | null };
   valence: { current: number | null };
@@ -119,7 +120,6 @@ export interface PulseCheck {
 export interface Room {
   code: string;
   name: string;
-  mode: Mode;
   vitals_source: VitalsSourceKind;
   created_at: number;
   pulse_check?: PulseCheck;

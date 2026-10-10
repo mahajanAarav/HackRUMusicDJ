@@ -16,7 +16,7 @@ export async function endCurrent(store: Store, code: string, status: "played" | 
   let impact: SongImpact | null = null;
   if (endMs - cur.started_at! >= MIN_PLAY_FOR_IMPACT_MS) {
     const readings = await store.getReadings(code, cur.started_at!);
-    impact = computeImpact(readings, cur, endMs, room.mode);
+    impact = computeImpact(readings, cur, endMs);
     await store.addImpact(code, impact);
   }
   const item = await store.updateQueueItem(code, cur.id, { status, ended_at: endMs });

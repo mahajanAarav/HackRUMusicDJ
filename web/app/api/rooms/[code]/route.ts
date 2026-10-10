@@ -1,7 +1,7 @@
 import { fail, json, readJson, withRoom } from "@/lib/api";
 import { now } from "@/lib/clock";
 import { store } from "@/lib/db";
-import type { Mode, VitalsSourceKind } from "@/lib/types";
+import type { VitalsSourceKind } from "@/lib/types";
 import { latestScans } from "@/lib/vitals/scans";
 import { getRoomEnergy } from "@/lib/vitals/source";
 
@@ -35,8 +35,7 @@ export const GET = withRoom(async (_req, room) => {
 });
 
 export const PATCH = withRoom(async (req, room) => {
-  const body = await readJson<{ name?: string; mode?: Mode; vitals_source?: VitalsSourceKind }>(req);
-  if (body.mode && !["hype", "winddown"].includes(body.mode)) return fail("bad mode");
+  const body = await readJson<{ name?: string; vitals_source?: VitalsSourceKind }>(req);
   if (body.vitals_source && !["simulated", "live"].includes(body.vitals_source)) return fail("bad vitals_source");
-  return json(await store.updateRoom(room.code, { ...(body.name?.trim() && { name: body.name.trim().slice(0, 40) }), ...(body.mode && { mode: body.mode }), ...(body.vitals_source && { vitals_source: body.vitals_source }) }));
+  return json(await store.updateRoom(room.code, { ...(body.name?.trim() && { name: body.name.trim().slice(0, 40) }), ...(body.vitals_source && { vitals_source: body.vitals_source }) }));
 });

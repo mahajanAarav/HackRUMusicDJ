@@ -1,8 +1,8 @@
-import type { Guest, Mode, QueueItem, Room, SongImpact, TraceEvent, VibeInput, VitalsReading, VitalsSourceKind } from "../types";
+import type { Guest, QueueItem, Room, SongImpact, TraceEvent, VibeInput, VitalsReading, VitalsSourceKind } from "../types";
 
 /** Persistence boundary. MemoryStore is the demo default; a Supabase impl slots in behind this. */
 export interface Store {
-  createRoom(mode: Mode, source: VitalsSourceKind, name?: string): Promise<Room>;
+  createRoom(source: VitalsSourceKind, name?: string): Promise<Room>;
   getRoom(code: string): Promise<Room | null>;
   updateRoom(code: string, patch: Partial<Room>): Promise<Room>;
 

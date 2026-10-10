@@ -26,6 +26,7 @@ An array of these is also accepted. Guests who have not opted in are rejected wi
 
 - Baseline: smoothed median of the 30 s before a song starts.
 - Smoothing: sliding median (k=5) then EMA (alpha 0.4), per guest, then median across guests. Readings below 0.5 confidence are dropped.
-- Song impact: in-song mean (skipping the first 10 s) minus baseline, reduced to -1..1:
-  - hype = 0.6 * dPulse/10 + 0.4 * valence
-  - winddown = 0.6 * (-dBreathing/4) + 0.4 * (-dPulse/10)
+- Song impact: in-song mean (skipping the first 10 s) minus baseline, reduced to a signed arousal change in -1..1:
+  `0.7 * dPulse/10 + 0.3 * dBreathing/3` (positive = pulse/breathing rose, negative = fell).
+  It is goal-free: there are no hype/wind-down modes. Gemini decides from the guests' inputs whether "up" or "down" was right.
+- Repeats: the server rejects any song already queued/played/skipped (matching title variants, same video id) and any artist used in the last 4 tracks.

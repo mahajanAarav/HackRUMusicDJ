@@ -25,11 +25,11 @@ export class MemoryStore implements Store {
     return r;
   }
 
-  async createRoom(mode: Room["mode"], source: Room["vitals_source"], name?: string) {
+  async createRoom(source: Room["vitals_source"], name?: string) {
     let code = "";
     do code = Array.from({ length: 4 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join("");
     while (this.rooms.has(code));
-    const room: Room = { code, name: name?.trim().slice(0, 40) || `Room ${code}`, mode, vitals_source: source, created_at: now() };
+    const room: Room = { code, name: name?.trim().slice(0, 40) || `Room ${code}`, vitals_source: source, created_at: now() };
     this.rooms.set(code, { room, guests: [], inputs: [], readings: [], queue: [], impacts: [], trace: [] });
     return room;
   }

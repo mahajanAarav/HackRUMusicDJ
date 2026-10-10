@@ -30,5 +30,5 @@ export async function getRoomEnergy(store: Store, code: string, opts: { windowS?
   await syncVitals(store, room, nowMs);
   const windowS = opts.windowS ?? 30;
   const readings = await store.getReadings(code, nowMs - Math.max(windowS, 120) * 1000);
-  return computeRoomEnergy(readings, { mode: room.mode, nowMs, windowS, baseline: await currentBaseline(store, room, nowMs) });
+  return computeRoomEnergy(readings, { nowMs, windowS, baseline: await currentBaseline(store, room, nowMs) });
 }
