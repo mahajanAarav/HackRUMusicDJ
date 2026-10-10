@@ -35,7 +35,8 @@ export const GET = withRoom(async (_req, room) => {
 });
 
 export const PATCH = withRoom(async (req, room) => {
-  const body = await readJson<{ name?: string; vitals_source?: VitalsSourceKind }>(req);
+  const body = await readJson<{ name?: string; dj_style?: string; vitals_source?: VitalsSourceKind }>(req);
+  if (body.dj_style && !["hype", "latenight", "dramatic"].includes(body.dj_style)) return fail("bad dj_style");
   if (body.vitals_source && !["simulated", "live"].includes(body.vitals_source)) return fail("bad vitals_source");
-  return json(await store.updateRoom(room.code, { ...(body.name?.trim() && { name: body.name.trim().slice(0, 40) }), ...(body.vitals_source && { vitals_source: body.vitals_source }) }));
+  return json(await store.updateRoom(room.code, { ...(body.name?.trim() && { name: body.name.trim().slice(0, 40) }), ...(body.dj_style && { dj_style: body.dj_style as "hype" | "latenight" | "dramatic" }), ...(body.vitals_source && { vitals_source: body.vitals_source }) }));
 });

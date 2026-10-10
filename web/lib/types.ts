@@ -123,6 +123,8 @@ export interface Room {
   vitals_source: VitalsSourceKind;
   created_at: number;
   pulse_check?: PulseCheck;
+  /** Tone of the DJ's spoken lines only. It never changes what gets played. */
+  dj_style?: "hype" | "latenight" | "dramatic";
   /** Newest guest input the DJ has already considered; anything newer is "pending". */
   dj_seen_ts?: number;
 }

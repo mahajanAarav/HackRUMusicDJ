@@ -5,7 +5,7 @@ import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { Ambient } from "@/components/Ambient";
 import { Cover } from "@/components/Cover";
 import { Equalizer } from "@/components/Equalizer";
-import { Check, Chevron, Copy, Heart, Play, Skip, Sparkle, Users, Wave, Wrench } from "@/components/Icons";
+import { Check, Copy, Heart, Mic, Play, Skip, Sparkle, Wave } from "@/components/Icons";
 import { Segmented } from "@/components/Segmented";
 import { Sparkline } from "@/components/Sparkline";
 import { useToast } from "@/components/Toast";
@@ -20,8 +20,14 @@ declare global {
 type Snap = any;
 
 const TARGET_QUEUE = 2;
-const AVATAR_COLORS = ["#ff4d6d", "#7b6cf6", "#4cc9f0", "#3ddc97", "#ffb020", "#f06bd0"];
-const colorFor = (s: string) => AVATAR_COLORS[[...s].reduce((h, c) => h + c.charCodeAt(0), 0) % AVATAR_COLORS.length];
+const GUEST_COLORS = ["#f05a38", "#3a49ee", "#f2bf45", "#3dbb9b", "#f06dc7"];
+const fgFor = (bg: string) => (bg === "#3a49ee" ? "#fff" : "#14131c");
+const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const ago = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 8 ? "now" : s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`; };
+
+const KIND_LABEL: Record<string, string> = { text: "typed a vibe", photo: "sent a photo", voice: "sent a voice note", artist: "suggested an artist" };
+const KIND_TAG: Record<string, string> = { text: "typed", photo: "photo", voice: "voice note", artist: "artist" };
+const KIND_COLOR: Record<string, string> = { text: "pink", photo: "red", voice: "blue", artist: "teal" };
 
 function fmtArgs(name: string, args: any): string {
   if (!args) return "";
@@ -32,43 +38,6 @@ function fmtArgs(name: string, args: any): string {
   return e.length ? e.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ") : "";
 }
 
-function TrackRow({ q, index, impact, playing }: { q: any; index: number; impact?: any; playing?: boolean }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className={`track ${open ? "open" : ""} ${playing ? "playing" : ""}`} style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}>
-      <button className="track-head" onClick={() => setOpen((o) => !o)}>
-        <span className="track-idx">{playing ? <Equalizer /> : index + 1}</span>
-        <Cover title={q.song} videoId={q.video_id} />
-        <div style={{ minWidth: 0 }}>
-          <div className="track-title ellipsis">{q.song}</div>
-          <div className="small mut ellipsis">{q.artist}{q.artist_basis === "suggested" ? " 🎤" : q.artist_basis === "similar" ? " ≈" : ""} · {q.reason}</div>
-        </div>
-        <div className="row" style={{ gap: 8 }}>
-          <div style={{ width: 54 }} title={`Energy ${Math.round(q.energy * 100)}%`}><div className="meter"><i style={{ width: `${q.energy * 100}%` }} /></div></div>
-          {impact?.score != null && <span className="chip acc" title="How the room's pulse/breathing moved vs. before the song">{impact.delta?.pulse != null ? `${impact.delta.pulse > 0 ? "↑" : "↓"} ${Math.abs(Math.round(impact.delta.pulse))} bpm` : impact.score > 0 ? "↑ rising" : "↓ falling"}</span>}
-          {q.status === "skipped" && <span className="chip err">skipped</span>}
-        </div>
-        <Chevron className="chev" width={18} height={18} />
-      </button>
-      <div className="track-detail"><div><div className="track-detail-inner">
-        <div className="small">{q.reason}</div>
-        {q.artist_basis && q.artist_basis !== "vibe" && (
-          <div className="row" style={{ gap: 6 }}>
-            <span className={`chip ${q.artist_basis === "suggested" ? "ok" : "acc"}`}>{q.artist_basis === "suggested" ? "🎤 Suggested artist" : `≈ Similar to ${q.similar_to ?? "a suggested artist"}`}</span>
-          </div>
-        )}
-        {q.influenced_by.length > 0 && (
-          <div className="row wrap" style={{ gap: 6 }}>
-            <span className="tiny dim">Influenced by</span>
-            {q.influenced_by.map((i: any) => <span className="chip acc" key={i.input_id}>{i.guest_name ?? "Guest"} · {i.kind}: {i.note}</span>)}
-          </div>
-        )}
-        <div className="evidence"><Heart width={12} height={12} style={{ color: "var(--ok)", marginRight: 6 }} />{q.physiological_evidence.summary}</div>
-      </div></div></div>
-    </div>
-  );
-}
-
 export default function Host({ params }: { params: Promise<{ code: string }> }) {
   const { code } = use(params);
   const [snap, setSnap] = useState<Snap>(null);
@@ -76,7 +45,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   const [busy, setBusy] = useState(false);
   const [clipS, setClipS] = useState(0); // 0 = play every song in full
   const [dev, setDev] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [time, setTime] = useState({ ct: 0, dur: 0, pct: 0 });
   const [err, setErr] = useState("");
   const [recap, setRecap] = useState("");
   const [base, setBase] = useState("");
@@ -85,6 +54,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   const [showTools, setShowTools] = useState(false);
   const [paused, setPaused] = useState(false);
   const [openTrace, setOpenTrace] = useState<Set<string>>(new Set());
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const toast = useToast();
 
   const player = useRef<any>(null);
@@ -105,15 +75,11 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   }, []);
   const savePublic = (v: string) => { setPublicUrl(v); try { localStorage.setItem("bdj:public", v); } catch {} };
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 3000); return () => clearInterval(t); }, []);
-  useEffect(() => { if (err) toast.show(err.replace(/^RATE_LIMITED: /, "Gemini rate limit: "), "err"); }, [err]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const t = setInterval(() => setNowTick(Date.now()), 5000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (err) toast.show(err.replace(/^RATE_LIMITED: /, "gemini rate limit: "), "err"); }, [err]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const poll = useCallback(async () => {
-    try {
-      const s = await api(`/rooms/${code}`);
-      setSnap(s);
-    } catch (e) {
-      setErr((e as Error).message);
-    }
+    try { setSnap(await api(`/rooms/${code}`)); } catch (e) { setErr((e as Error).message); }
   }, [code]);
   useEffect(() => {
     poll();
@@ -126,7 +92,6 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   const playing = queue.find((q) => q.status === "playing");
   const upcoming = queue.filter((q) => q.status === "queued");
   const history = queue.filter((q) => q.status === "played" || q.status === "skipped").reverse();
-  const e = snap?.energy;
   const pending: number = snap?.pending_inputs ?? 0;
 
   const guarded = useCallback(async (fn: () => Promise<unknown>) => {
@@ -195,12 +160,12 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
     })();
   }, [started, playing, speak, advance, clipS, playerReady]);
 
-  // Autopilot: keep one track queued, start the next when idle.
+  // Autopilot: react to new guest input, keep the queue topped up, start the next track when idle.
   useEffect(() => {
     if (!started || paused || busy || Date.now() - failedAt.current < cooldown.current) return;
     if (!playing && upcoming.length) advance("next");
-    else if (pending > 0 && (snap?.pending_age_ms ?? 0) >= 3000) askDj("new_input"); // react to fresh guest input
-    else if (upcoming.length < TARGET_QUEUE) askDj(playing ? "next_song" : "start"); // keep the queue topped up
+    else if (pending > 0 && (snap?.pending_age_ms ?? 0) >= 3000) askDj("new_input");
+    else if (upcoming.length < TARGET_QUEUE) askDj(playing ? "next_song" : "start");
   }, [started, paused, busy, playing, upcoming.length, pending, snap?.pending_age_ms, advance, askDj, tick]);
 
   // Create the YouTube player once started and the IFrame API script has loaded.
@@ -221,272 +186,395 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
     return () => clearInterval(t);
   }, [started, advance]);
 
-  // Progress bar: real playback position when the YouTube player knows it, otherwise elapsed time.
+  // Progress: real playback position when the YouTube player knows it, otherwise elapsed time.
   useEffect(() => {
-    if (!playing) { setProgress(0); return; }
+    if (!playing) { setTime({ ct: 0, dur: 0, pct: 0 }); return; }
     const mock = playing.video_id.startsWith("mock:");
     const t = setInterval(() => {
       const dur = !mock ? player.current?.getDuration?.() : 0;
-      if (dur > 0 && clipS === 0) setProgress(Math.min(100, ((player.current.getCurrentTime?.() ?? 0) / dur) * 100));
-      else setProgress(Math.min(100, ((Date.now() - playing.started_at) / ((clipS > 0 ? clipS : 180) * 1000)) * 100));
+      if (dur > 0 && clipS === 0) {
+        const ct = player.current.getCurrentTime?.() ?? 0;
+        setTime({ ct, dur, pct: Math.min(100, (ct / dur) * 100) });
+      } else {
+        const total = clipS > 0 ? clipS : 180;
+        const ct = (Date.now() - playing.started_at) / 1000;
+        setTime({ ct: Math.min(ct, total), dur: total, pct: Math.min(100, (ct / total) * 100) });
+      }
     }, 500);
     return () => clearInterval(t);
   }, [playing?.id, clipS]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---------- derived ----------
   const origin = (publicUrl.trim() || base).replace(/\/+$/, "");
   const joinUrl = `${origin}/r/${code}`;
   const insecure = origin.startsWith("http://") && !/^http:\/\/localhost/.test(origin);
-  const realGuests = (snap?.guests ?? []).filter((g: any) => !g.simulated);
-  const artistInputs = (snap?.inputs ?? []).filter((i: any) => i.kind === "artist");
-  const playedCount = (name: string) => queue.filter((q) => q.artist.toLowerCase().includes(name.toLowerCase().split(/,|&|ft\.?|feat\.?/)[0].trim())).length;
-  const simGuests = (snap?.guests ?? []).filter((g: any) => g.simulated);
-  const LABELS: Record<string, string> = { start: "Opening the night", next_song: "Picking the next track", new_input: "Reacting to a new vibe", pulse_check: "Reacting to a pulse check" };
-  // Group the trace into DJ runs: one trigger followed by the decisions it produced.
+  const realGuests: any[] = (snap?.guests ?? []).filter((g: any) => !g.simulated);
+  const inputs: any[] = snap?.inputs ?? [];
+  const colorOf = (guestId: string) => GUEST_COLORS[Math.max(0, realGuests.findIndex((g) => g.id === guestId)) % GUEST_COLORS.length];
+  const nameOf = (guestId: string) => realGuests.find((g) => g.id === guestId)?.name ?? "guest";
+  const av = (id: string, lg = false) => <span key={id} className={`avatar ${lg ? "lg" : ""}`} style={{ background: colorOf(id), color: fgFor(colorOf(id)) }} title={nameOf(id)}>{nameOf(id)[0]?.toUpperCase()}</span>;
+  const inputGuest = (inputId: string) => inputs.find((i) => i.id === inputId)?.guest_id as string | undefined;
+
+  const stageInputs = [...inputs].reverse().slice(0, 4);
+  const leftCards = stageInputs.filter((_, i) => i % 2 === 0);
+  const rightCards = stageInputs.filter((_, i) => i % 2 === 1);
+  const influencing = new Set<string>((playing?.influenced_by ?? []).map((x: any) => x.input_id));
+  const influencingGuests = new Set<string>([...influencing].map((id) => inputGuest(id)).filter(Boolean) as string[]);
+  const matchTag = !playing ? null : influencingGuests.size >= 2 ? { t: "bridge found", c: "yellow" } : influencingGuests.size === 1 ? { t: "vibe matched", c: "teal" } : { t: "dj's pick", c: "pink" };
+  const guestsWithInput = new Set(inputs.map((i) => i.guest_id));
+
+  // who's been heard: how many picks each guest's input shaped
+  const heard = new Map<string, number>();
+  for (const g of guestsWithInput) heard.set(g, 0);
+  for (const q of queue) for (const g of new Set<string>((q.influenced_by ?? []).map((x: any) => inputGuest(x.input_id)).filter(Boolean) as string[])) heard.set(g, (heard.get(g) ?? 0) + 1);
+  const heardList = [...heard.entries()];
+  const maxHeard = Math.max(1, ...heard.values());
+  const boost = heardList.length > 1 ? [...heardList].sort((a, b) => a[1] - b[1])[0] : null;
+
+  const next = upcoming[0];
+  const curE = Math.round((playing?.energy ?? 0) * 10);
+  const nextE = Math.round((next?.energy ?? playing?.energy ?? 0) * 10);
+  const tbars = Array.from({ length: 10 }, (_, i) => { const v = curE + ((nextE - curE) * i) / 9; return { h: 20 + (Math.max(0, v) / 10) * 80, hot: i >= 5 }; });
+  const energyPts = queue.filter((q) => q.status !== "skipped").map((q) => q.energy as number).slice(-8);
+
+  const LABELS: Record<string, string> = { start: "opening the night", next_song: "picking the next track", new_input: "reacting to a new vibe", pulse_check: "reacting to a pulse check" };
   const runs = (() => {
     const out: { id: string; label: string; items: any[]; error?: string }[] = [];
     for (const t of snap?.trace ?? []) {
-      if (t.kind === "trigger") out.push({ id: t.id, label: LABELS[String(t.text).split(" ")[0]] ?? "Deciding", items: [] });
+      if (t.kind === "trigger") out.push({ id: t.id, label: LABELS[String(t.text).split(" ")[0]] ?? "deciding", items: [] });
       else if (out.length && t.kind === "decision") out[out.length - 1].items.push(t);
       else if (out.length && t.kind === "error") out[out.length - 1].error = t.text;
     }
-    return out.reverse();
+    return out.reverse().slice(0, 6);
   })();
   const scanSummary = snap?.scan_summary;
   const pulseHist: number[] = snap?.recent_pulse ?? [];
   const beat = scanSummary?.pulse ? `${60 / scanSummary.pulse}s` : "1s";
   const toggleTrace = (id: string) => setOpenTrace((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const vibesIn = inputs.length;
+
+  const inputCard = (i: any) => {
+    const color = KIND_COLOR[i.kind] ?? "pink";
+    return (
+      <div key={i.id} className={`in-card ${color} ${influencing.has(i.id) ? "traced" : ""}`} title={influencing.has(i.id) ? "shaped the current pick" : undefined}>
+        <div className="row" style={{ gap: 8 }}>
+          {av(i.guest_id)}
+          <span className="label">{KIND_LABEL[i.kind]}</span>
+        </div>
+        {i.kind === "photo" && <div className="in-img" style={{ marginTop: 8 }}><img src={`/api/rooms/${code}/media/${i.id}`} alt="guest photo" style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }} /></div>}
+        {i.kind === "voice" && <div className="bars-wave" style={{ marginTop: 10 }}>{Array.from({ length: 18 }, (_, k) => <i key={k} style={{ animationDelay: `${(k % 6) * 0.12}s`, animationDuration: `${0.8 + (k % 5) * 0.15}s` }} />)}</div>}
+        {(i.kind === "text" || i.kind === "artist") && <div className="quote">{i.kind === "text" ? `“${i.text}”` : i.text}</div>}
+        <div className="by">{nameOf(i.guest_id)} · {ago(nowTick - i.created_at)}</div>
+      </div>
+    );
+  };
 
   return (
     <div className="app">
       <Ambient song={playing ? `${playing.song} ${playing.artist}` : null} energy={playing?.energy ?? 0.4} />
-      <div className="host">
-        {/* ---------------- left: room ---------------- */}
-        <section className="side">
-          <div className="logo"><span className="logo-mark"><Wave /></span> Biofeedback DJ</div>
-
-          <div className="col" style={{ gap: 8 }}>
-            {dev && <><div className="eyebrow" style={{ marginTop: 6 }}>Vitals source (dev)</div>
-            <Segmented options={[{ value: "live", label: "Real scans" }, { value: "simulated", label: "Simulated" }]} value={room?.vitals_source ?? "live"} onChange={(v) => api(`/rooms/${code}`, { vitals_source: v }, "PATCH").then(poll)} /></>}
+      <div className="host-wrap">
+        <div className="host-top">
+          <div className="row" style={{ gap: 10 }}>
+            <span className="dot-live" />
+            <span style={{ fontWeight: 800, fontSize: 18 }}>live · {room?.name ?? "…"}</span>
+            <span className="pill sm">room {code}</span>
           </div>
-
-          <div className="col" style={{ gap: 8 }}>
-            <div className="eyebrow">Scan to join</div>
-            <div className="qr-wrap"><QRCodeSVG value={joinUrl} size={180} bgColor="#ffffff" /></div>
-            <input className="field" style={{ padding: "7px 10px", fontSize: 12 }} placeholder="Paste https tunnel URL (optional)" value={publicUrl} onChange={(ev) => savePublic(ev.target.value)} />
-            {insecure && <div className="tiny" style={{ color: "var(--warn)" }}>Phones block mic and camera on http. Paste an https tunnel URL above.</div>}
-            <button className="btn ghost sm" onClick={() => { navigator.clipboard?.writeText(joinUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-              {copied ? <><Check width={14} height={14} /> Copied</> : <><Copy width={14} height={14} /> {joinUrl.replace(/^https?:\/\//, "")}</>}
-            </button>
+          <div className="row wrap" style={{ gap: 10 }}>
+            <Segmented options={[{ value: "hype", label: "hype host" }, { value: "latenight", label: "late night radio" }, { value: "dramatic", label: "dramatic narrator" }]} value={room?.dj_style ?? "hype"} onChange={(v) => api(`/rooms/${code}`, { dj_style: v }, "PATCH").then(poll)} />
+            <span className="pill">{vibesIn === 0 ? "waiting for the first vibe" : vibesIn === 1 ? "1 vibe in · the room fills in the rest" : `${vibesIn} vibes in`}</span>
           </div>
+        </div>
 
-          <div className="col" style={{ gap: 4 }}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div className="eyebrow"><Users width={12} height={12} style={{ verticalAlign: -2 }} /> Guests · {realGuests.length}</div>
-            </div>
-            {realGuests.length === 0 && <div className="small dim">Waiting for the first guest…</div>}
-            {realGuests.map((g: any) => (
-              <div className="guest" key={g.id}>
-                <span className="avatar" style={{ background: colorFor(g.name) }}>{g.name[0]?.toUpperCase()}{g.sensing && <span className="sense" />}</span>
-                <span className="grow ellipsis">{g.name}</span>
-                {g.sensing && <span className="chip ok">sensing</span>}
+        <div className="host-grid">
+          {/* ================= main column ================= */}
+          <div className="col" style={{ gap: 22 }}>
+            <div className="stage">
+              <div className="stage-side">
+                {leftCards.length ? leftCards.map((i) => inputCard(i)) : <div className="in-card yellow"><span className="label">waiting</span><div className="quote">drop a vibe from your phone</div></div>}
               </div>
-            ))}
-            {room?.vitals_source === "simulated" && simGuests.length > 0 && <div className="tiny dim" style={{ marginTop: 4 }}>+ {simGuests.length} simulated guests feeding vitals</div>}
-          </div>
 
-          <div className="col" style={{ gap: 6 }}>
-            <div className="eyebrow">🎤 Suggested artists · {artistInputs.length}</div>
-            {artistInputs.length === 0 && <div className="small dim">Guests can add artists from their phones. The DJ plays them and similar artists.</div>}
-            <div className="row wrap" style={{ gap: 6 }}>
-              {artistInputs.map((a: any) => <span className="chip acc" key={a.id} title={`Suggested by ${a.guest_name}`} style={{ animation: "pop .4s var(--ease) both" }}>{a.text}{playedCount(a.text) > 0 && <span className="dim"> · {playedCount(a.text)}</span>}</span>)}
-            </div>
-          </div>
+              <div className="art-wrap-outer" style={{ position: "relative" }}>
+                {matchTag && <span className={`pill ${matchTag.c} tag-float label`} style={{ fontSize: 12, padding: "5px 12px" }} key={playing?.id}>{matchTag.t}</span>}
+                <div className={`art-wrap ${playing ? "playing" : ""}`}>
+                  <div className="vinyl" />
+                  <div className="art">{playing ? <Cover title={playing.song} videoId={playing.video_id} size={270} radius={0} /> : <span className="label dim">album art</span>}</div>
+                </div>
+              </div>
 
-          <div style={{ marginTop: "auto" }}>
-            <button className="btn ghost sm" style={{ width: "100%" }} onClick={async () => setRecap((await api(`/rooms/${code}/recap`, {})).recap)}><Sparkle width={14} height={14} /> Night recap</button>
-            {recap && <p className="small mut" style={{ marginTop: 10, animation: "fadeUp .4s both" }}>{recap}</p>}
-          </div>
-        </section>
-
-        {/* ---------------- center: now playing + queue ---------------- */}
-        <section className="center">
-          <div className="center-hero">
-            <div className="eyebrow">Room · {room?.code}</div>
-            <h1 className="room-title" style={{ marginTop: 6 }}>{room?.name ?? <span className="skeleton" style={{ display: "inline-block", width: 260, height: 40 }} />}</h1>
-
-            <div className="hero-grid">
-              <div className="col" style={{ gap: 12 }}>
-                {playing ? (
-                  <div className="row" style={{ gap: 14, animation: "pop .5s var(--ease) both" }} key={playing.id}>
-                    <Cover title={playing.song} videoId={playing.video_id} size={92} radius={12} />
-                    <div style={{ minWidth: 0 }}>
-                      <div className="eyebrow row" style={{ gap: 6 }}><Equalizer /> Now playing</div>
-                      <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-.02em" }} className="ellipsis">{playing.song}</div>
-                      <div className="mut">{playing.artist}</div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mut">{started ? (busy ? "The DJ is picking the first track…" : "Warming up…") : "Press Start to begin the night."}</div>
-                )}
-                {playing && <p className="small mut" style={{ maxWidth: 520 }}>“{playing.reason}”</p>}
-                <div className="row wrap">
-                  {!started ? (
-                    <button className="btn primary big" onClick={() => setStarted(true)}><Play width={18} height={18} /> Start the night</button>
+              <div className="stage-side">
+                {rightCards.map((i) => inputCard(i))}
+                <div className="in-card teal">
+                  <div className="row" style={{ gap: 8 }}><Heart width={16} height={16} className="heart" style={{ ["--beat" as string]: beat }} /><span className="label">room pulse</span></div>
+                  {scanSummary?.n ? (
+                    <div className="quote" style={{ marginBottom: 2 }}>{Math.round(scanSummary.pulse)} bpm{scanSummary.breathing ? ` · ${scanSummary.breathing} rpm` : ""}</div>
                   ) : (
-                    <>
-                      <button className="btn" disabled={busy || !playing} onClick={() => advance("skip")}><Skip width={16} height={16} /> Skip</button>
-                      <button className={`btn ghost ${paused ? "warn-btn" : ""}`} onClick={() => setPaused((v) => !v)} title="Stop the DJ from making Gemini requests on its own">{paused ? "▶ Resume AI" : "⏸ Pause AI"}</button>
-                      <button className="btn ghost" disabled={busy} onClick={() => askDj()}>{busy ? <span className="spinner" /> : <Sparkle width={16} height={16} />} Ask DJ</button>
-                    </>
+                    <div className="quote" style={{ fontSize: 16 }}>no pulse scans yet</div>
+                  )}
+                  <div className="by">{scanSummary?.n ? `${scanSummary.n} guest${scanSummary.n > 1 ? "s" : ""} scanned` : "scan from the pulse tab"}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* now playing */}
+            <div>
+              <div className="label dim">now playing</div>
+              <div className="np-title">{playing?.song ?? (started ? (busy ? "picking the first track…" : "warming up…") : "press start")}</div>
+              <div className="row wrap" style={{ gap: 8 }}>
+                <span className="mut" style={{ fontSize: 17, fontWeight: 600 }}>{playing?.artist ?? "—"}</span>
+                {playing?.artist_basis === "suggested" && <span className="pill sm teal">🎤 suggested artist</span>}
+                {playing?.artist_basis === "similar" && <span className="pill sm yellow">≈ similar to {playing.similar_to ?? "a suggested artist"}</span>}
+                {playing && <Equalizer active size={16} />}
+              </div>
+
+              <div className="np-row">
+                <div className="col" style={{ gap: 14 }}>
+                  <div className="progress">
+                    <div className="track"><i style={{ width: `${time.pct}%` }} /></div>
+                    <span className="mono small">{fmt(time.ct)} / {time.dur ? fmt(time.dur) : "–:––"}</span>
+                  </div>
+                  <div className="row wrap" style={{ gap: 10 }}>
+                    {!started ? (
+                      <button className="btn primary big" onClick={() => setStarted(true)}><Play width={18} height={18} /> start the night</button>
+                    ) : (
+                      <>
+                        <button className="btn" disabled={busy || !playing} onClick={() => advance("skip")}><Skip width={16} height={16} /> skip</button>
+                        <button className="btn" disabled={busy} onClick={() => askDj()}>{busy ? <span className="spinner" /> : <Sparkle width={16} height={16} />} ask dj</button>
+                        <button className={`btn ghost ${paused ? "yellow" : ""}`} onClick={() => setPaused((v) => !v)} title="stop the dj from making requests on its own">{paused ? "▶ resume ai" : "⏸ pause ai"}</button>
+                      </>
+                    )}
+                    <label className="small row" style={{ gap: 6 }}>play
+                      <select className="field" value={clipS} onChange={(ev) => setClipS(Number(ev.target.value))} style={{ width: 120, padding: "6px 8px" }}>
+                        <option value={0}>full songs</option><option value={30}>30s clips</option><option value={60}>60s clips</option><option value={90}>90s clips</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="player">
+                  {started ? <div id="yt" /> : null}
+                  {(!started || !playing || announcing || playing.video_id.startsWith("mock:")) && (
+                    <div className="player-overlay">
+                      {playing && announcing ? (
+                        <div className="col" style={{ alignItems: "center", gap: 8 }}><Mic width={26} height={26} /><div style={{ fontWeight: 800 }}>the dj is announcing…</div><div className="small" style={{ maxWidth: 240 }}>{playing.announcement}</div></div>
+                      ) : playing?.video_id.startsWith("mock:") ? (
+                        <div><div style={{ fontWeight: 800, fontSize: 18 }}>{playing.song}</div><div>{playing.artist}</div><div className="small" style={{ marginTop: 6 }}>no youtube key · mock playback</div></div>
+                      ) : (
+                        <div><Wave width={30} height={30} /><div style={{ marginTop: 4 }}>{started ? (err ? "waiting to retry…" : "loading…") : "video appears here"}</div></div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
+            </div>
 
-              <div className="player">
-                {started ? <div id="yt" /> : null}
-                {(!started || !playing || announcing || playing.video_id.startsWith("mock:")) && (
-                  <div className="player-overlay">
-                    {playing && announcing ? (
-                      <div className="col" style={{ alignItems: "center", gap: 10 }}><Cover title={playing.song} videoId={playing.video_id} size={90} radius={14} /><div className="row" style={{ gap: 8 }}><Equalizer size={18} /><span style={{ fontWeight: 700 }}>The DJ is announcing…</span></div><div className="small mut" style={{ maxWidth: 260 }}>{playing.announcement}</div></div>
-                    ) : playing?.video_id.startsWith("mock:") ? (
-                      <div className="col" style={{ alignItems: "center", gap: 8 }}><Cover title={playing.song} size={90} radius={14} /><div style={{ fontWeight: 800, fontSize: 18 }}>{playing.song}</div><div className="mut">{playing.artist}</div><span className="chip warn">No YouTube key · mock playback</span></div>
-                    ) : (
-                      <div className="mut"><Wave width={34} height={34} style={{ color: "var(--acc)" }} /><div style={{ marginTop: 6 }}>{started ? (err ? "Waiting to retry…" : "Loading…") : "Video appears here"}</div></div>
-                    )}
-                  </div>
-                )}
+            <div className="box black sh-red why">
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="label gold">why this one</span>
+                <span className="small" style={{ opacity: .6 }}>highlighted inputs shaped this pick</span>
               </div>
+              <div className="text">{playing ? playing.reason : "once a track is playing, the dj explains the pick here, tied back to who said what."}</div>
+              {playing?.physiological_evidence?.summary && <div className="mono small" style={{ marginTop: 10, opacity: .7 }}>♥ {playing.physiological_evidence.summary}</div>}
             </div>
-          </div>
 
-          <div className="center-body">
-            <div className="section-head"><h2>Up next</h2><span className="small dim">{upcoming.length} queued · tap a track for the why</span></div>
-            {upcoming.length === 0 && <div className="small dim" style={{ padding: "8px 10px" }}>{busy ? "Gemini is choosing…" : "Nothing queued. The DJ will fill this automatically."}</div>}
-            {upcoming.map((q, i) => <TrackRow key={q.id} q={q} index={i} />)}
-
-            {history.length > 0 && (<>
-              <div className="section-head"><h2>Played</h2><span className="small dim">pulse change vs. before each song</span></div>
-              {history.slice(0, 10).map((q, i) => <TrackRow key={q.id} q={q} index={i} impact={snap?.impacts?.find((x: any) => x.queue_id === q.id)} />)}
-            </>)}
-          </div>
-        </section>
-
-        {/* ---------------- right: vitals + trace ---------------- */}
-        <section className="right">
-          <div className="card">
-            <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-              <div className="eyebrow row" style={{ gap: 6 }}><Heart width={12} height={12} /> Pulse scans</div>
-              <span className="chip">{scanSummary?.n ?? 0} scanned</span>
+            <div className="box blue transition">
+              <span className="label">next transition</span>
+              <span className="mono" style={{ fontWeight: 700 }}>energy {Math.round((playing?.energy ?? 0) * 100)} → {Math.round((next?.energy ?? playing?.energy ?? 0) * 100)}</span>
+              <div className="tbars">{tbars.map((b, i) => <i key={i} className={b.hot ? "hot" : ""} style={{ height: `${b.h}%` }} />)}</div>
+              <span className="small" style={{ fontWeight: 700 }}>{next ? `${next.song} · next` : "waiting for the next pick"}</span>
             </div>
-            {(scanSummary?.n ?? 0) === 0 ? (
-              <div className="empty-scan">
-                <Heart width={22} height={22} className="heart" />
-                <div style={{ fontWeight: 700, marginTop: 6 }}>No pulse scans yet</div>
-                <div className="small mut">Vitals only appear when a guest opens the Pulse tab on their phone and scans with their camera. Until then the DJ goes by what guests tell it.</div>
-              </div>
-            ) : (
-              <>
-                <div className="row" style={{ gap: 8, alignItems: "stretch" }}>
-                  <div className="vital">
-                    <div className="tiny mut"><Heart className="heart" width={12} height={12} style={{ ["--beat" as string]: beat }} /> Pulse</div>
-                    <b><AnimatedNumber value={scanSummary.pulse} /></b>
-                    <span className="tiny dim">bpm</span>
-                  </div>
-                  <div className="vital">
-                    <div className="tiny mut">Breathing</div>
-                    <b><AnimatedNumber value={scanSummary.breathing} decimals={1} /></b>
-                    <span className="tiny dim">rpm</span>
-                  </div>
-                </div>
-                <div style={{ margin: "14px 0 6px" }}><Sparkline values={pulseHist} /></div>
-                <div className="col" style={{ gap: 4 }}>
-                  {(snap?.scans ?? []).map((sc: any) => (
-                    <div className="guest" key={sc.guest_id}>
-                      <span className="avatar" style={{ background: colorFor(sc.name) }}>{sc.name[0]?.toUpperCase()}</span>
-                      <span className="grow ellipsis">{sc.name}</span>
-                      <span className="small mut">{Math.round(sc.pulse_bpm)} bpm{sc.breathing_rpm ? ` · ${sc.breathing_rpm} rpm` : ""}</span>
-                      <span className="tiny dim">{sc.age_s < 90 ? `${sc.age_s}s` : `${Math.round(sc.age_s / 60)}m`} ago</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
 
-          <div className="card">
-            <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-              <div className="eyebrow row" style={{ gap: 6 }}><Sparkle width={12} height={12} /> DJ decisions</div>
-              {pending > 0 && !busy && <span className="chip warn">{pending} new vibe{pending > 1 ? "s" : ""} pending</span>}
-              {busy && <span className="chip acc"><span className="spinner" style={{ width: 10, height: 10, border: "2px solid currentColor", borderRightColor: "transparent", borderRadius: "50%", animation: "spin .7s linear infinite" }} /> thinking</span>}
+            <div className="box energy-bar">
+              <span className="label">room energy</span>
+              <div className="energy-seg">{Array.from({ length: 10 }, (_, i) => <i key={i} className={i < curE ? "now" : i < nextE ? "aim" : ""} />)}</div>
+              <span className="mono small" style={{ fontWeight: 700 }}>{curE} → aiming for {nextE}</span>
             </div>
-            <div className="trace-list">
-              {runs.length === 0 && <div className="small dim">Each time the DJ changes the queue, you’ll see what it did and why.</div>}
-              {runs.map((r) => (
-                <div key={r.id} className="run">
-                  <div className="tiny dim run-label">{r.label}</div>
-                  {r.items.length === 0 && !r.error && <div className="decision keep"><span className="trace-ico"><Check width={12} height={12} /></span><span className="small mut">{busy && r === runs[0] ? "Thinking…" : "Kept the queue as it was."}</span></div>}
-                  {r.items.map((d: any) => (
-                    <div key={d.id} className={`decision ${d.name}`}>
-                      <span className="trace-ico">{d.name === "queued" ? <Check width={12} height={12} /> : "✕"}</span>
-                      <div className="grow" style={{ minWidth: 0 }}>
-                        {d.name === "queued" && <>
-                          <div className="small"><b>Queued {d.result.song}</b> <span className="mut">· {d.result.artist}</span></div>
-                          <div className="small mut">{d.result.reason}</div>
-                          <div className="row wrap" style={{ gap: 4, marginTop: 4 }}>
-                            {(d.result.influenced_by ?? []).map((x: any) => <span className="chip acc" key={x.input_id}>{x.guest_name ?? "Guest"} · {x.kind}</span>)}
-                          </div>
-                          {d.result.evidence && <div className="tiny" style={{ color: "var(--ok)", marginTop: 4 }}>♥ {d.result.evidence}</div>}
-                        </>}
-                        {d.name === "removed" && <div className="small"><b>Removed {d.result.song}</b> <span className="mut">· no longer fits the room</span></div>}
-                        {d.name === "skipped" && <><div className="small"><b>Skipped {d.result.song}</b></div><div className="small mut">{d.result.reason}</div></>}
-                      </div>
-                    </div>
-                  ))}
-                  {r.error && <div className="decision error"><span className="trace-ico">!</span><span className="small" style={{ color: "var(--err)" }}>{String(r.error).replace(/^RATE_LIMITED: /, "")}</span></div>}
-                </div>
-              ))}
-            </div>
-            <button className="tiny dim" style={{ marginTop: 10, textDecoration: "underline" }} onClick={() => setShowTools((v) => !v)}>{showTools ? "Hide" : "Show"} raw tool calls</button>
-            {showTools && (
-              <div className="trace-list" style={{ marginTop: 8 }}>
-                {(snap?.trace ?? []).filter((t: any) => t.kind === "tool_call" || t.kind === "tool_result").slice().reverse().map((t: any) => {
-                  const open = openTrace.has(t.id);
+
+            {history.length > 0 && (
+              <div className="box">
+                <div className="label dim" style={{ marginBottom: 6 }}>played tonight</div>
+                {history.slice(0, 6).map((q) => {
+                  const imp = snap?.impacts?.find((x: any) => x.queue_id === q.id);
                   return (
-                    <div key={t.id} className={`trace-item ${t.kind}`} onClick={() => toggleTrace(t.id)}>
-                      <span className="trace-ico">{t.kind === "tool_call" ? <Wrench width={12} height={12} /> : "↳"}</span>
-                      <div className="grow" style={{ minWidth: 0 }}>
-                        {t.kind === "tool_call" ? <><b>{t.name}</b> <code>{fmtArgs(t.name, t.args)}</code></> : <span className="mut">{t.name}: {open ? <pre className="full"><code>{JSON.stringify(t.result, null, 2)}</code></pre> : JSON.stringify(t.result).slice(0, 90) + "…"}</span>}
-                      </div>
+                    <div className="list-row" key={q.id}>
+                      <Cover title={q.song} videoId={q.video_id} size={36} />
+                      <div className="grow"><div className="ellipsis" style={{ fontWeight: 700 }}>{q.song}</div><div className="small mut ellipsis">{q.artist}</div></div>
+                      {imp?.score != null && <span className="chip acc">{imp.delta?.pulse != null ? `${imp.delta.pulse > 0 ? "↑" : "↓"} ${Math.abs(Math.round(imp.delta.pulse))} bpm` : imp.score > 0 ? "↑ rising" : "↓ falling"}</span>}
+                      {q.status === "skipped" && <span className="chip err">skipped</span>}
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
-        </section>
-      </div>
 
-      {/* ---------------- now-playing bar ---------------- */}
-      <div className="nowbar">
-        <div className="row" style={{ minWidth: 0 }}>
-          {playing ? <Cover title={playing.song} videoId={playing.video_id} size={46} /> : <div className="skeleton" style={{ width: 46, height: 46 }} />}
-          <div style={{ minWidth: 0 }}>
-            <div className="ellipsis" style={{ fontWeight: 700 }}>{playing?.song ?? "Not playing"}</div>
-            <div className="small mut ellipsis">{playing?.artist ?? room?.name ?? ""}</div>
+          {/* ================= right column ================= */}
+          <div className="side-col">
+            <div className="box join-card">
+              <div className="qr"><QRCodeSVG value={joinUrl} size={92} bgColor="#ffffff" /></div>
+              <div className="grow">
+                <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-.03em", lineHeight: 1 }}>scan to join</div>
+                <div className="small" style={{ marginTop: 4 }}>send a photo, a voice note, or a vibe. the dj is listening.</div>
+                <button className="btn sm" style={{ marginTop: 8 }} onClick={() => { navigator.clipboard?.writeText(joinUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+                  {copied ? <><Check width={13} height={13} /> copied</> : <><Copy width={13} height={13} /> copy link</>}
+                </button>
+              </div>
+            </div>
+            <div className="col" style={{ gap: 6, marginTop: -8 }}>
+              <input className="field mono" style={{ padding: "7px 10px", fontSize: 12 }} placeholder="paste https tunnel url (optional)" value={publicUrl} onChange={(ev) => savePublic(ev.target.value)} />
+              {insecure && <div className="tiny" style={{ color: "var(--err)", fontWeight: 700 }}>phones block mic and camera on http. use an https link.</div>}
+              {dev && <Segmented options={[{ value: "live", label: "real scans" }, { value: "simulated", label: "simulated" }]} value={room?.vitals_source ?? "live"} onChange={(v) => api(`/rooms/${code}`, { vitals_source: v }, "PATCH").then(poll)} />}
+            </div>
+
+            {guestsWithInput.size < 2 && (
+              <div className="box black sh-pink quiet">
+                <div className="label gold">{guestsWithInput.size === 0 ? "quiet in here" : "one voice so far"}</div>
+                <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.15, margin: "6px 0", letterSpacing: "-.02em" }}>add a second vibe and the dj starts blending</div>
+                <div className="small" style={{ opacity: .7 }}>until then it works from {guestsWithInput.size === 0 ? "its own taste and any pulse scans" : "that one vibe, which gets full weight"}.</div>
+              </div>
+            )}
+
+            <div className="box">
+              <div className="label dim" style={{ marginBottom: 8 }}>dj brain</div>
+              <div className="brain">
+                {runs.length === 0 && <div className="ln dim">decisions show up here as the dj makes them.</div>}
+                {busy && <div className="ln hot">thinking…</div>}
+                {runs.map((r) => (
+                  <div key={r.id}>
+                    <div className="ln dim runlabel">▸ {r.label}</div>
+                    {r.items.length === 0 && !r.error && <div className="ln dim">  kept the queue as it was</div>}
+                    {r.items.map((d: any, k: number) => (
+                      <div key={d.id}>
+                        {d.name === "queued" && <>
+                          <div className={`ln ${k === 0 && r === runs[0] ? "hot" : ""}`}><b>queued {d.result.song}</b> — {d.result.artist}</div>
+                          <div className="ln dim">  {d.result.reason}</div>
+                          {(d.result.influenced_by ?? []).slice(0, 3).map((x: any) => <div className="ln dim" key={x.input_id}>  heard {x.kind === "text" ? "a vibe" : `a ${x.kind}`} from {x.guest_name ?? "a guest"}: {x.note}</div>)}
+                          {d.result.evidence && <div className="ln dim">  ♥ {d.result.evidence}</div>}
+                        </>}
+                        {d.name === "removed" && <div className="ln"><b>removed {d.result.song}</b> — no longer fits</div>}
+                        {d.name === "skipped" && <div className="ln"><b>skipped {d.result.song}</b> — {d.result.reason}</div>}
+                      </div>
+                    ))}
+                    {r.error && <div className="ln" style={{ color: "var(--err)" }}>✗ {String(r.error).replace(/^RATE_LIMITED: /, "")}</div>}
+                  </div>
+                ))}
+              </div>
+              <button className="tiny dim" style={{ marginTop: 10, textDecoration: "underline" }} onClick={() => setShowTools((v) => !v)}>{showTools ? "hide" : "show"} raw tool calls</button>
+              {showTools && (
+                <div className="brain" style={{ marginTop: 8, maxHeight: 260, overflow: "auto" }}>
+                  {(snap?.trace ?? []).filter((t: any) => t.kind === "tool_call" || t.kind === "tool_result").slice().reverse().map((t: any) => (
+                    <div key={t.id} className="ln" style={{ cursor: "pointer" }} onClick={() => toggleTrace(t.id)}>
+                      {t.kind === "tool_call" ? <><b>{t.name}</b> <span className="dim">{fmtArgs(t.name, t.args)}</span></> : <span className="dim">↳ {t.name}: {openTrace.has(t.id) ? <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(t.result, null, 2)}</pre> : JSON.stringify(t.result).slice(0, 80) + "…"}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="box chart">
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="label dim">energy tonight</span><span className="tiny dim">dots = songs</span>
+              </div>
+              {energyPts.length < 2 ? <div className="spark-empty" style={{ height: 80 }}>fills in as songs queue up</div> : (
+                <svg viewBox="0 0 300 90" preserveAspectRatio="none" style={{ marginTop: 6 }}>
+                  <line x1="0" y1="85" x2="300" y2="85" stroke="#14131c" strokeOpacity=".2" strokeWidth="2" />
+                  <polyline fill="none" stroke="#f05a38" strokeWidth="3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" points={energyPts.map((v, i) => `${10 + (i / (energyPts.length - 1)) * 280},${80 - v * 70}`).join(" ")} />
+                  {energyPts.map((v, i) => <circle key={i} cx={10 + (i / (energyPts.length - 1)) * 280} cy={80 - v * 70} r="5" fill={i === Math.max(0, energyPts.length - 1 - upcoming.length) ? "#f2bf45" : "#fff"} stroke="#14131c" strokeWidth="2.5" />)}
+                </svg>
+              )}
+            </div>
+
+            <div className="box">
+              <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
+                <span className="label dim">live inputs</span><span className="tiny dim">newest first</span>
+              </div>
+              {inputs.length === 0 && <div className="small dim">nothing yet. scan the code and send a vibe.</div>}
+              {[...inputs].reverse().slice(0, 6).map((i, k) => (
+                <div className={`input-row ${k === 0 && nowTick - i.created_at < 20000 ? "new" : ""}`} key={i.id}>
+                  {av(i.guest_id, true)}
+                  <div className="grow" style={{ minWidth: 0 }}>
+                    <div className="label dim" style={{ fontSize: 10 }}>{KIND_TAG[i.kind]}</div>
+                    <div className="ellipsis" style={{ fontWeight: 700 }}>{i.kind === "text" ? `“${i.text}”` : i.kind === "artist" ? i.text : i.kind === "photo" ? "a photo" : "a voice note"}</div>
+                  </div>
+                  <span className="tiny dim">{ago(nowTick - i.created_at)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="box">
+              <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+                <span className="label dim">pulse scans</span><span className="pill sm">{scanSummary?.n ?? 0} scanned</span>
+              </div>
+              {(scanSummary?.n ?? 0) === 0 ? (
+                <div className="empty-scan">no pulse scans yet. a guest opens the pulse tab and scans with their camera. until then the dj goes by what guests tell it.</div>
+              ) : (
+                <>
+                  <div className="row" style={{ gap: 8 }}>
+                    <div className="vital"><div className="tiny mut">pulse</div><b><AnimatedNumber value={scanSummary.pulse} /></b><span className="tiny dim">bpm</span></div>
+                    <div className="vital"><div className="tiny mut">breathing</div><b><AnimatedNumber value={scanSummary.breathing} decimals={1} /></b><span className="tiny dim">rpm</span></div>
+                  </div>
+                  <div style={{ margin: "12px 0 4px" }}><Sparkline values={pulseHist} /></div>
+                  {(snap?.scans ?? []).map((sc: any) => (
+                    <div className="list-row" key={sc.guest_id}>
+                      {av(sc.guest_id)}<span className="grow ellipsis">{sc.name}</span>
+                      <span className="small mut">{Math.round(sc.pulse_bpm)} bpm</span><span className="tiny dim">{ago(sc.age_s * 1000)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            <div className="box">
+              <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+                <span className="label dim">up next</span><span className="tiny dim">{upcoming.length} queued</span>
+              </div>
+              {upcoming.length === 0 && <div className="small dim">{busy ? "gemini is choosing…" : "nothing queued. the dj fills this automatically."}</div>}
+              {upcoming.map((q) => {
+                const gs = [...new Set<string>((q.influenced_by ?? []).map((x: any) => inputGuest(x.input_id)).filter(Boolean) as string[])];
+                return (
+                  <div className="list-row" key={q.id}>
+                    <div className="grow" style={{ minWidth: 0 }}>
+                      <div className="ellipsis" style={{ fontWeight: 800 }}>{q.song}</div>
+                      <div className="small mut ellipsis">{q.artist} · {q.artist_basis === "similar" ? `similar to ${q.similar_to ?? "suggested"}` : q.artist_basis === "suggested" ? "suggested artist" : q.reason}</div>
+                    </div>
+                    <span className="avatars">{gs.map((g) => av(g))}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="box">
+              <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+                <span className="label dim">who’s been heard</span>
+                {boost && boost[1] < maxHeard && <span className="pill sm pink">{nameOf(boost[0])} gets the next boost</span>}
+              </div>
+              {heardList.length === 0 ? <div className="small dim">fills in as guests send vibes.</div> : (
+                <div className="heard">
+                  {heardList.map(([g, n]) => (
+                    <div className="col1" key={g}>
+                      <div className="bar" style={{ height: `${Math.max(12, (n / maxHeard) * 100)}%`, background: colorOf(g) }} title={`${n} picks shaped`} />
+                      <span className="tiny" style={{ fontWeight: 800 }}>{nameOf(g)[0]?.toUpperCase()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="box">
+              <div className="label dim" style={{ marginBottom: 8 }}>in the room · {realGuests.length}</div>
+              <div className="row wrap" style={{ gap: 6 }}>
+                {realGuests.length === 0 && <span className="small dim">waiting for the first guest…</span>}
+                {realGuests.map((g) => <span className="pill sm" key={g.id}>{av(g.id)}{g.name}{g.sensing ? " ●" : ""}</span>)}
+              </div>
+              {inputs.some((i) => i.kind === "artist") && (
+                <>
+                  <div className="label dim" style={{ margin: "12px 0 6px" }}>suggested artists</div>
+                  <div className="row wrap" style={{ gap: 6 }}>{inputs.filter((i) => i.kind === "artist").map((a) => <span className="pill sm teal" key={a.id}>🎤 {a.text}</span>)}</div>
+                </>
+              )}
+              <button className="btn sm" style={{ marginTop: 12 }} onClick={async () => setRecap((await api(`/rooms/${code}/recap`, {})).recap)}><Sparkle width={13} height={13} /> night recap</button>
+              {recap && <p className="small" style={{ marginTop: 10, animation: "fadeUp .4s both" }}>{recap}</p>}
+            </div>
           </div>
-        </div>
-        <div className="nowbar-mid">
-          <div className="row" style={{ gap: 14 }}>
-            <button className="btn icon" disabled={!started || busy || !playing} onClick={() => advance("skip")} aria-label="Skip"><Skip width={18} height={18} /></button>
-          </div>
-          <div className="progress"><i style={{ width: `${progress}%` }} /></div>
-        </div>
-        <div className="row nowbar-right" style={{ justifyContent: "flex-end" }}>
-          <label className="small mut row" style={{ gap: 6 }}>Play
-            <select className="field" value={clipS} onChange={(ev) => setClipS(Number(ev.target.value))} style={{ width: 110, padding: "6px 8px" }}>
-              <option value={0}>Full songs</option><option value={30}>30s clips</option><option value={60}>60s clips</option><option value={90}>90s clips</option>
-            </select>
-          </label>
         </div>
       </div>
       {toast.node}

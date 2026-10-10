@@ -95,6 +95,12 @@ export async function runDj(
   const artistNames = inputs.filter((i) => i.kind === "artist").map((i) => i.text);
   const lastBasis = [...queue].reverse().find((q) => q.artist_basis)?.artist_basis;
   const artistTurn = artistNames.length ? (lastBasis === "suggested" ? "similar" : "suggested") : null;
+  // Fairness: make sure quieter guests are heard. Count how many picks each guest's inputs have shaped.
+  const heard = new Map<string, number>();
+  const owner = new Map(inputs.map((i) => [i.id, i.guest_name]));
+  for (const g of new Set(inputs.map((i) => i.guest_name))) heard.set(g, 0);
+  for (const q of queue) for (const n of new Set(q.influenced_by.map((x) => owner.get(x.input_id)).filter(Boolean) as string[])) heard.set(n, (heard.get(n) ?? 0) + 1);
+  const leastHeard = heard.size > 1 ? [...heard.entries()].sort((a, b) => a[1] - b[1])[0] : null;
   const seenUpTo = inputs.reduce((m, i) => Math.max(m, i.created_at), room.dj_seen_ts ?? 0);
   const header = [
     `Trigger: ${trigger}.`,
@@ -109,6 +115,9 @@ export async function runDj(
       : artistTurn === "similar"
         ? `ARTIST TURN: this pick should be by a DIFFERENT artist who sounds similar to one of the suggested artists (${artistNames.join(", ")}), in the same lane and fitting the vibe and heartbeat. Set artist_basis="similar" and similar_to to the suggested artist it resembles. Do not pick the suggested artists themselves this turn.`
         : "",
+    leastHeard && leastHeard[1] < Math.max(...heard.values())
+      ? `Fairness: ${leastHeard[0]}'s inputs have shaped the fewest picks so far (${leastHeard[1]}). Give their input extra weight this time if it fits.`
+      : "",
     fresh.length
       ? `NEW guest input since your last decision (honor it first): ${fresh.map((i) => `[input_id=${i.id}] ${i.guest_name} (${i.kind})`).join(", ")}. If an upcoming track no longer fits, remove it and add one that does.`
       : "",
@@ -126,7 +135,7 @@ export async function runDj(
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       let res;
       try {
-        res = await llm.generate({ system: systemPrompt(), contents });
+        res = await llm.generate({ system: systemPrompt(room.dj_style), contents });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         const fallbackOk = msg.startsWith("RATE_LIMITED") || chain[idx].name === "Groq"; // Groq tool-call hiccups also fall through
