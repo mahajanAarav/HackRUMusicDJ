@@ -1,0 +1,26 @@
+# Render Blueprint: deploys the Next.js app as ONE always-on instance with a public https URL.
+# (Rooms live in memory, so keep a single instance. For multiple instances, swap in the Supabase store.)
+services:
+  - type: web
+    name: biofeedback-dj
+    runtime: node
+    rootDir: web
+    plan: free            # free sleeps after ~15 min idle; use "starter" for a live demo day
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: GROQ_API_KEY
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
