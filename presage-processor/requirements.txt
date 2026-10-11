@@ -1,4 +1,8 @@
-presage-technologies==1.6.0
+# Presage's own packages pin mediapipe==0.9.1.0 (no longer downloadable), so they are installed with --no-deps in the Dockerfile
+# and their real dependencies are listed here. mediapipe 0.10.14 still ships the legacy mp.solutions.face_mesh / pose they use.
+mediapipe==0.10.14
+numpy==1.26.4
+ffmpeg-python==0.2.0
+requests
 flask==3.0.3
 gunicorn==22.0.0
-requests
