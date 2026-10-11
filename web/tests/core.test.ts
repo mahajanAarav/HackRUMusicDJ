@@ -299,7 +299,7 @@ describe("youtube lookup", () => {
 });
 
 import http from "node:http";
-import { fetchResult, seriesValues, summarizeSeries, uploadClip } from "../lib/presage";
+import { fetchResult, presageConfigured, seriesValues, submitClip, summarizeSeries } from "../lib/presage";
 describe("presage cloud client", () => {
   it("summarizes the shapes a vitals series might arrive in", () => {
     expect(seriesValues({ "0.5": 70, "1.0": 72 })).toEqual([70, 72]);
@@ -309,40 +309,37 @@ describe("presage cloud client", () => {
     expect(summarizeSeries({ a: 1, b: 2 }, 30, 220)).toBeNull();
   });
 
-  it("uploads in parts, completes, polls through 'processing', and returns median vitals", async () => {
-    const calls: string[] = [];
+  it("submits a clip to the processor with the shared secret, polls through 'processing', and returns median vitals", async () => {
     let polls = 0;
+    let gotBytes = 0;
     const srv = http.createServer((req, res) => {
-      let body = "";
-      req.on("data", (c) => (body += c));
+      const chunks: Buffer[] = [];
+      req.on("data", (c) => chunks.push(c));
       req.on("end", () => {
-        calls.push(`${req.method} ${req.url}`);
-        const send = (code: number, obj?: unknown, extra: Record<string, string> = {}) => { res.writeHead(code, { "content-type": "application/json", ...extra }); res.end(obj === undefined ? "" : JSON.stringify(obj)); };
-        if (req.url?.startsWith("/put/")) return send(200, undefined, { etag: `"etag${req.url.slice(5)}"` });
-        if (req.headers["x-api-key"] !== "good-key") return send(401, { error: "bad key" });
-        const port = (srv.address() as { port: number }).port;
-        if (req.url === "/v1/upload-url") { expect(JSON.parse(body).hr_br.to_process).toBe(true); return send(200, { id: "vid1", upload_id: "up1", urls: [`http://127.0.0.1:${port}/put/1`, `http://127.0.0.1:${port}/put/2`] }); }
-        if (req.url === "/v1/complete") { expect(JSON.parse(body).parts).toEqual([{ ETag: '"etag1"', PartNumber: 1 }, { ETag: '"etag2"', PartNumber: 2 }]); return send(200, {}); }
-        if (req.url === "/retrieve-data") return ++polls < 2 ? send(201) : send(200, { hr: { 1: 80, 2: 71, 3: 72, 4: 73, 5: 72, 6: 71 }, rr: { 1: 15, 2: 14, 3: 15, 4: 16, 5: 15, 6: 15 } });
-        send(404);
+        const send = (code: number, obj: unknown) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+        if (req.headers["x-processor-secret"] !== "shh") return send(401, { error: "unauthorized" });
+        if (req.method === "POST" && req.url === "/jobs") { gotBytes = Buffer.concat(chunks).length; return send(201, { id: "job1" }); }
+        if (req.method === "GET" && req.url === "/jobs/job1") return ++polls < 2 ? send(200, { status: "processing", stage: "preprocessing" }) : send(200, { status: "ready", hr: { 1: 80, 2: 71, 3: 72, 4: 73, 5: 72, 6: 71 }, rr: { 1: 15, 2: 14, 3: 15, 4: 16, 5: 15, 6: 15 } });
+        send(404, {});
       });
     });
     await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
-    const port = (srv.address() as { port: number }).port;
-    process.env.PRESAGE_BASE_URL = `http://127.0.0.1:${port}`;
-    process.env.PRESAGE_API_KEY = "good-key"; process.env.PRESAGE_VIDEO_UPLOAD = "1";
+    process.env.PRESAGE_PROCESSOR_URL = `http://127.0.0.1:${(srv.address() as { port: number }).port}/`;
+    process.env.PROCESSOR_SECRET = "shh";
     try {
-      const id = await uploadClip(new Uint8Array(6 * 1024 * 1024)); // 6 MB -> two 5 MB-chunk parts, matching 2 urls
-      expect(id).toBe("vid1");
-      expect(await fetchResult(id)).toEqual({ status: "pending" });
-      const done = await fetchResult(id);
-      expect(done).toMatchObject({ status: "ready", pulse_bpm: 72, breathing_rpm: 15 });
-      process.env.PRESAGE_API_KEY = "wrong";
-      await expect(uploadClip(new Uint8Array(20_000))).rejects.toThrow(/key/i);
+      expect(presageConfigured()).toBe(true);
+      const id = await submitClip(new Uint8Array(20_000), "video/webm");
+      expect(id).toBe("job1");
+      expect(gotBytes).toBe(20_000);
+      expect(await fetchResult(id)).toEqual({ status: "pending", stage: "preprocessing" });
+      expect(await fetchResult(id)).toMatchObject({ status: "ready", pulse_bpm: 72, breathing_rpm: 15 });
+      process.env.PROCESSOR_SECRET = "wrong";
+      await expect(submitClip(new Uint8Array(20_000), "video/mp4")).rejects.toThrow(/refused/i);
     } finally {
       srv.close();
-      delete process.env.PRESAGE_BASE_URL;
-      delete process.env.PRESAGE_API_KEY;
+      delete process.env.PRESAGE_PROCESSOR_URL;
+      delete process.env.PROCESSOR_SECRET;
     }
+    expect(presageConfigured()).toBe(false);
   });
 });

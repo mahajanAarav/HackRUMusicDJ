@@ -26,7 +26,7 @@ Built for HackRU (Gemini track and ElevenLabs). Presage work is partial: see "Pr
 ### Presage (partial: the app does NOT use Presage's measurement today)
 - Guests can opt in and scan; the backend smooths readings, takes a pre-song baseline, and scores each song's effect on the room.
 - **Browser estimate (what runs today):** our own in-browser remote-PPG estimate, clearly labeled as an estimate. This is not Presage's measurement.
-- **Presage Physiology API:** we built and tested a client (`web/lib/presage.ts`) against a mock, then found the live API now accepts only locally preprocessed traces (Presage's Python library), so raw-video upload from a browser no longer works. The path is disabled by default and documented in the code.
+- **Presage pipeline (`presage-processor/`):** Presage's live API only accepts a locally preprocessed "trace", which their Python library builds from video. A small Python service runs that official library on the scan clip and sends only the trace to Presage's Physiology API; the web app then labels the result "measured with presage". If the processor is not configured or fails, the page falls back to the labeled browser estimate.
 - **iPhone app (`ios/`):** a SwiftUI shell + JS bridge, ready for the SmartSpectra SDK; the SDK hookup (`PresageProvider.swift`) is not finished.
 - **Privacy:** opt-in with a visible indicator; only numbers are stored, never video; pulse/breathing figures are never shown publicly (the room sees "energy rising", not bpm).
 

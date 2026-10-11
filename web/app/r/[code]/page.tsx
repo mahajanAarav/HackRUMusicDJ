@@ -182,8 +182,8 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
       setPcOut(null);
       setLiveBpm(null);
 
-      // Record the same stream so Presage can measure it. Only when the server has a Presage key and this browser records MP4.
-      const mime = snap?.presage_cloud && typeof MediaRecorder !== "undefined" ? ["video/mp4;codecs=avc1.42E01E", "video/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) : undefined;
+      // Record the same stream so Presage's pipeline can measure it. Only when the server has a Presage processor configured.
+      const mime = snap?.presage_cloud && typeof MediaRecorder !== "undefined" ? ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp8", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m)) : undefined;
       const clip: Blob[] = [];
       let recorder: MediaRecorder | null = null;
       if (mime) {
@@ -345,12 +345,12 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
               <button className={`switch ${sensing ? "on" : ""}`} aria-label="opt in to sensing" onClick={() => run(async () => void (await api(`/rooms/${code}/consent`, { guest_id: guest.id, sensing: !sensing })), sensing ? "sensing off" : "sensing on")} />
               <div className="grow">
                 <div style={{ fontWeight: 800 }}>share my vitals</div>
-                <div className="tiny mut">{snap?.presage_cloud ? "only while you scan. a 20-second clip is sent to presage to measure your pulse; we never store it and the room only sees a qualitative feel." : "pulse and breathing numbers only, and only while you scan. video never leaves your phone and is never stored."}</div>
+                <div className="tiny mut">{snap?.presage_cloud ? "only while you scan. a 20-second clip goes to our processing server, which turns it into anonymous face-color numbers for presage and deletes the clip right away. the room only sees a qualitative feel." : "pulse and breathing numbers only, and only while you scan. video never leaves your phone and is never stored."}</div>
               </div>
             </div>
             {sensing && !camOn && <div className="sense-banner"><span className="live-dot" /> sensing is on · readings only, no video stored</div>}
             {pc !== null && native && <div className="sense-banner"><span className="live-dot" /> {nativeSim ? "test scan (simulated)" : "presage is scanning"} · only numbers are sent</div>}
-            {camOn && <div className="sense-banner"><span className="live-dot" /> {snap?.presage_cloud ? "camera is on · a 20-second clip is sent to presage to measure your pulse, and we don’t keep it" : "camera is on · only numbers are sent, no video is recorded"}</div>}
+            {camOn && <div className="sense-banner"><span className="live-dot" /> {snap?.presage_cloud ? "camera is on · a 20-second clip is processed on our server for presage, then deleted" : "camera is on · only numbers are sent, no video is recorded"}</div>}
 
             <div className="pulse-stage">
               {pc !== null && <><i className="pulse-ring" /><i className="pulse-ring" /><i className="pulse-ring" /></>}

@@ -1,41 +1,21 @@
 import { median } from "./vitals/smooth";
 
 /**
- * DISABLED BY DEFAULT. Checked live on 2026-10-11: Presage retired the raw-video `/v1/*` endpoints used below (they answer
- * "Missing Authentication Token"). The current `/v2/upload-url` + `/v2/complete` accepts only a *trace* produced by Presage's own
- * Python preprocessing library (presage-physiology-preprocessing + mediapipe), which cannot run in a browser or on this Node server.
- * To revive this you would need a small Python service that runs that library on the clip and uploads the trace via /v2.
- * Enable the old behavior only for testing against a mock with PRESAGE_VIDEO_UPLOAD=1.
+ * Presage scans go through our own Python processor (presage-processor/), which runs Presage's official preprocessing library
+ * on the clip and sends only the resulting trace to Presage's Physiology API. The browser never talks to Presage, and the clip
+ * is deleted by the processor right after. Configure with PRESAGE_PROCESSOR_URL and PROCESSOR_SECRET.
  *
- * Protocol (v1, from Presage's Python client 1.5.0):
- *   POST /v1/upload-url {file_size, hr_br:{to_process:true}}  -> {id, urls[], upload_id}   (header x-api-key)
- *   PUT  each url with up to 5 MB of the file                  -> ETag header per part
- *   POST /v1/complete {id, upload_id, parts:[{ETag, PartNumber}]}
- *   POST /retrieve-data {id, reshape:false}                    -> 201 still processing, 200 + {hr, rr}
- * The key stays on the server. The clip is held in memory only for the duration of the request and is never saved.
+ * (Presage's older raw-video /v1 endpoints no longer exist; checked live on 2026-10-11.)
  */
-const BASE = () => process.env.PRESAGE_BASE_URL ?? "https://api.physiology.presagetech.com";
-const CHUNK = 5 * 1024 * 1024;
+const processorUrl = () => process.env.PRESAGE_PROCESSOR_URL?.replace(/\/+$/, "");
+export const presageConfigured = () => !!processorUrl();
+const authHeaders = () => ({ "x-processor-secret": process.env.PROCESSOR_SECRET ?? "" });
 
-export const presageConfigured = () => !!process.env.PRESAGE_API_KEY && process.env.PRESAGE_VIDEO_UPLOAD === "1";
-
-const headers = () => ({ "x-api-key": process.env.PRESAGE_API_KEY!, "Content-Type": "application/json" });
-
-export async function uploadClip(bytes: Uint8Array): Promise<string> {
-  const start = await fetch(`${BASE()}/v1/upload-url`, { method: "POST", headers: headers(), body: JSON.stringify({ file_size: bytes.byteLength, hr_br: { to_process: true } }) });
-  if (start.status === 401) throw new Error("Presage rejected the API key (401).");
-  if (!start.ok) throw new Error(`Presage upload-url failed: ${start.status} ${(await start.text()).slice(0, 160)}`);
-  const { id, urls, upload_id } = (await start.json()) as { id: string; urls: string[]; upload_id: string };
-
-  const parts: { ETag: string; PartNumber: number }[] = [];
-  for (let i = 0; i < urls.length; i++) {
-    const put = await fetch(urls[i], { method: "PUT", body: bytes.slice(i * CHUNK, (i + 1) * CHUNK) });
-    if (!put.ok) throw new Error(`Presage part upload failed: ${put.status}`);
-    parts.push({ ETag: put.headers.get("etag") ?? "", PartNumber: i + 1 });
-  }
-  const done = await fetch(`${BASE()}/v1/complete`, { method: "POST", headers: headers(), body: JSON.stringify({ id, upload_id, parts }) });
-  if (!done.ok) throw new Error(`Presage complete failed: ${done.status} ${(await done.text()).slice(0, 160)}`);
-  return id;
+export async function submitClip(bytes: Uint8Array, mime: string): Promise<string> {
+  const res = await fetch(`${processorUrl()}/jobs`, { method: "POST", headers: { ...authHeaders(), "Content-Type": mime || "video/mp4" }, body: new Blob([bytes as BlobPart], { type: mime || "video/mp4" }) });
+  const j = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+  if (!res.ok || !j.id) throw new Error(`Presage processor refused the clip: ${res.status} ${j.error ?? ""}`.trim());
+  return j.id;
 }
 
 /** Pull plausible numbers out of whatever shape a vitals series arrives in (object of time->value, array of numbers, array of [t, v] or {value}). */
@@ -65,13 +45,14 @@ export function summarizeSeries(x: unknown, lo: number, hi: number): number | nu
   return m == null ? null : Math.round(m * 10) / 10;
 }
 
-export type ScanStatus = { status: "pending" } | { status: "ready"; pulse_bpm: number | null; breathing_rpm: number | null; n_samples: number };
+export type ScanStatus = { status: "pending"; stage?: string } | { status: "ready"; pulse_bpm: number | null; breathing_rpm: number | null; n_samples: number };
 
 export async function fetchResult(id: string): Promise<ScanStatus> {
-  const res = await fetch(`${BASE()}/retrieve-data`, { method: "POST", headers: headers(), body: JSON.stringify({ id, reshape: false }) });
-  if (res.status === 401) throw new Error("Presage rejected the API key (401).");
-  if (res.status !== 200) return { status: "pending" }; // 201 = still processing; treat other transient codes the same
-  const data = (await res.json()) as { hr?: unknown; rr?: unknown };
+  const res = await fetch(`${processorUrl()}/jobs/${encodeURIComponent(id)}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Presage processor error: ${res.status}`);
+  const data = (await res.json()) as { status: string; hr?: unknown; rr?: unknown; error?: string; stage?: string };
+  if (data.status === "error") throw new Error(data.error ?? "Presage processing failed");
+  if (data.status !== "ready") return { status: "pending", stage: data.stage };
   if (process.env.DEBUG_PRESAGE) console.log("[presage] result keys:", Object.keys(data), JSON.stringify(data).slice(0, 300));
   return { status: "ready", pulse_bpm: summarizeSeries(data.hr, 30, 220), breathing_rpm: summarizeSeries(data.rr, 4, 40), n_samples: seriesValues(data.hr).length };
 }

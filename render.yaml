@@ -20,9 +20,24 @@ services:
         sync: false
       - key: YOUTUBE_API_KEY
         sync: false
-      - key: PRESAGE_API_KEY
+      - key: PRESAGE_PROCESSOR_URL
+        sync: false
+      - key: PROCESSOR_SECRET
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID
+        sync: false
+
+  # Presage processor: runs Presage's preprocessing library on scan clips (needs ~1 GB RAM: use the starter plan or higher).
+  - type: web
+    name: presage-processor
+    runtime: docker
+    rootDir: presage-processor
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      - key: PRESAGE_API_KEY
+        sync: false
+      - key: PROCESSOR_SECRET
         sync: false

@@ -1,12 +1,12 @@
 import { fail, json, withRoom } from "@/lib/api";
 import { store } from "@/lib/db";
-import { fetchResult, presageConfigured, uploadClip } from "@/lib/presage";
+import { fetchResult, presageConfigured, submitClip } from "@/lib/presage";
 
 export const maxDuration = 60;
 const MAX_BYTES = 25 * 1024 * 1024;
 
 /**
- * Presage cloud scan. POST: the browser sends the recorded clip; we forward it to Presage and return an id (the clip is not stored).
+ * Presage cloud scan. POST: the browser sends the recorded clip; we forward it to our Presage processor and return an id (the clip is not stored here).
  * GET ?id=: the browser polls until Presage has processed it, then gets the numbers.
  * Requires the guest to have opted in to sensing.
  */
@@ -19,7 +19,7 @@ export const POST = withRoom(async (req, room) => {
   const bytes = new Uint8Array(await req.arrayBuffer());
   if (bytes.byteLength < 10_000) return fail("clip too small");
   if (bytes.byteLength > MAX_BYTES) return fail("clip too large", 413);
-  return json({ id: await uploadClip(bytes) }, 201);
+  return json({ id: await submitClip(bytes, req.headers.get("content-type") ?? "video/mp4") }, 201);
 });
 
 export const GET = withRoom(async (req, room) => {
