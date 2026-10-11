@@ -3,6 +3,7 @@ import { now } from "@/lib/clock";
 import { store } from "@/lib/db";
 import type { VitalsSourceKind } from "@/lib/types";
 import { publicRoom, publicTrace } from "@/lib/dj/privacy";
+import { presageConfigured } from "@/lib/presage";
 import { latestScans } from "@/lib/vitals/scans";
 import { getRoomEnergy } from "@/lib/vitals/source";
 
@@ -22,6 +23,7 @@ export const GET = withRoom(async (_req, room) => {
   return json({
     // Heart-rate numbers are never sent to browsers. The room only gets a qualitative read.
     feel: { n: scanData.summary.n, trend: energy.trend },
+    presage_cloud: presageConfigured(),
     pending_inputs: fresh.length,
     pending_age_ms: fresh.length ? now() - Math.max(...fresh.map((i) => i.created_at)) : 0,
     room: publicRoom(cur),

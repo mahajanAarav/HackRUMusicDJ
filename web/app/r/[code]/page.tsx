@@ -37,6 +37,8 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
   const [liveBpm, setLiveBpm] = useState<number | null>(null);
   const toast = useToast();
   const [native, setNative] = useState(false);
+  const [cloudWait, setCloudWait] = useState(false);
+  const [pcSource, setPcSource] = useState<"presage" | "webcam" | null>(null);
   const [nativeSim, setNativeSim] = useState(false);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has("fakenative")) installFakeNative();
@@ -123,6 +125,19 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
     }
   }
 
+  /** Send the recorded clip to Presage (via our server, which holds the key) and wait for the numbers. */
+  async function sendToPresage(blob: Blob) {
+    const up = await fetch(`/api/rooms/${code}/scan-video?guest_id=${guest!.id}`, { method: "POST", headers: { "Content-Type": blob.type || "video/mp4" }, body: blob });
+    const j = await up.json().catch(() => ({}));
+    if (!up.ok) throw new Error(j.error ?? "upload failed");
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const r = await api<any>(`/rooms/${code}/scan-video?guest_id=${guest!.id}&id=${encodeURIComponent(j.id)}`);
+      if (r.status === "ready") return r as { pulse_bpm: number | null; breathing_rpm: number | null; n_samples: number };
+    }
+    throw new Error("Presage took too long");
+  }
+
   /** Inside the iPhone app: hand the scan to the Presage SDK. Only numbers come back. */
   async function nativePulseCheck() {
     try {
@@ -167,6 +182,16 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
       setPcOut(null);
       setLiveBpm(null);
 
+      // Record the same stream so Presage can measure it. Only when the server has a Presage key and this browser records MP4.
+      const mime = snap?.presage_cloud && typeof MediaRecorder !== "undefined" ? ["video/mp4;codecs=avc1.42E01E", "video/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) : undefined;
+      const clip: Blob[] = [];
+      let recorder: MediaRecorder | null = null;
+      if (mime) {
+        recorder = new MediaRecorder(stream, { mimeType: mime });
+        recorder.ondataavailable = (e) => { if (e.data.size) clip.push(e.data); };
+        recorder.start(1000);
+      }
+
       const meter = new RppgMeter();
       let raf = 0;
       const loop = () => { meter.sample(video); raf = requestAnimationFrame(loop); };
@@ -185,15 +210,35 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
       }
       cancelAnimationFrame(raf);
       setPc(0);
-      stream.getTracks().forEach((t) => t.stop()); // camera off immediately; nothing was recorded
+      let clipBlob: Blob | null = null;
+      if (recorder) {
+        await new Promise<void>((res) => { recorder!.onstop = () => res(); recorder!.stop(); });
+        clipBlob = new Blob(clip, { type: mime });
+      }
+      stream.getTracks().forEach((t) => t.stop()); // camera off immediately
       stream = null;
       setCamOn(false);
-      const m = meter.analyze();
-      if (m.pulse_bpm == null) {
+
+      // Prefer Presage's measurement; fall back to our in-browser estimate if it is unavailable.
+      const est = meter.analyze();
+      let measured: { pulse_bpm: number | null; breathing_rpm: number | null; confidence?: number; n_samples?: number; source: "presage" | "webcam" } | null = est.pulse_bpm == null ? null : { ...est, source: "webcam" };
+      if (clipBlob && clipBlob.size > 10_000) {
+        setCloudWait(true);
+        try {
+          const r = await sendToPresage(clipBlob);
+          if (r.pulse_bpm != null) measured = { pulse_bpm: r.pulse_bpm, breathing_rpm: r.breathing_rpm, confidence: 0.9, n_samples: r.n_samples, source: "presage" };
+        } catch (er) {
+          toast.show(`Presage unavailable (${(er as Error).message}). Using the browser estimate.`, "err");
+        } finally {
+          setCloudWait(false);
+        }
+      }
+      if (!measured) {
         toast.show("Couldn't get a clean reading. Face a light, hold still, and fill the oval.", "err");
         return;
       }
-      setPcOut(await api(`/rooms/${code}/pulse-check`, { guest_id: guest!.id, action: "finish", measured: m }));
+      setPcSource(measured.source);
+      setPcOut(await api(`/rooms/${code}/pulse-check`, { guest_id: guest!.id, action: "finish", measured }));
       poll();
     } catch (er) {
       toast.show((er as Error).message, "err");
@@ -300,12 +345,12 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
               <button className={`switch ${sensing ? "on" : ""}`} aria-label="opt in to sensing" onClick={() => run(async () => void (await api(`/rooms/${code}/consent`, { guest_id: guest.id, sensing: !sensing })), sensing ? "sensing off" : "sensing on")} />
               <div className="grow">
                 <div style={{ fontWeight: 800 }}>share my vitals</div>
-                <div className="tiny mut">pulse and breathing numbers only, and only while you scan. video never leaves your phone and is never stored.</div>
+                <div className="tiny mut">{snap?.presage_cloud ? "only while you scan. a 20-second clip is sent to presage to measure your pulse; we never store it and the room only sees a qualitative feel." : "pulse and breathing numbers only, and only while you scan. video never leaves your phone and is never stored."}</div>
               </div>
             </div>
             {sensing && !camOn && <div className="sense-banner"><span className="live-dot" /> sensing is on · readings only, no video stored</div>}
             {pc !== null && native && <div className="sense-banner"><span className="live-dot" /> {nativeSim ? "test scan (simulated)" : "presage is scanning"} · only numbers are sent</div>}
-            {camOn && <div className="sense-banner"><span className="live-dot" /> camera is on · only numbers are sent, no video is recorded</div>}
+            {camOn && <div className="sense-banner"><span className="live-dot" /> {snap?.presage_cloud ? "camera is on · a 20-second clip is sent to presage to measure your pulse, and we don’t keep it" : "camera is on · only numbers are sent, no video is recorded"}</div>}
 
             <div className="pulse-stage">
               {pc !== null && <><i className="pulse-ring" /><i className="pulse-ring" /><i className="pulse-ring" /></>}
@@ -315,14 +360,14 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
               </svg>
               <div className={`cam-circle ${camOn ? "on" : ""}`}><video ref={videoRef} muted playsInline /></div>
               <button className={`pulse-btn ${pc !== null ? "running" : ""} ${camOn ? "over-cam" : ""}`} disabled={!sensing || pc !== null} onClick={pulseCheck}>
-                {pc === null ? <div><Heart width={34} height={34} className="heart" /><div style={{ marginTop: 4 }}>{sensing ? "start" : "opt in first"}</div></div> : <div style={{ fontSize: 34 }}>{liveBpm ? <>{Math.round(liveBpm)}<div style={{ fontSize: 11, opacity: .8 }}>bpm · {pc}s</div></> : pc}</div>}
+                {pc === null ? <div><Heart width={34} height={34} className="heart" /><div style={{ marginTop: 4 }}>{sensing ? "start" : "opt in first"}</div></div> : <div style={{ fontSize: 34 }}>{cloudWait ? <><span className="spinner" /><div style={{ fontSize: 11, marginTop: 4 }}>presage…</div></> : liveBpm ? <>{Math.round(liveBpm)}<div style={{ fontSize: 11, opacity: .8 }}>bpm · {pc}s</div></> : pc}</div>}
               </button>
             </div>
-            {pc !== null && camOn && <p className="small mut" style={{ textAlign: "center" }}>fill the oval with your face, face a light, and hold still.</p>}
+            {pc !== null && camOn && <p className="small mut" style={{ textAlign: "center" }}>hold the phone so your face and shoulders are in view, face a light, and hold still.</p>}
 
             {pcOut && (
               <div className="box col" style={{ animation: "pop .5s var(--ease) both" }}>
-                <div className="label dim">your reading</div>
+                <div className="label dim">your reading · {pcSource === "presage" ? "measured with presage" : native ? "from the app" : "browser estimate"}</div>
                 <div className="row" style={{ gap: 8 }}>
                   <div className="vital"><div className="tiny mut">pulse</div><b><AnimatedNumber value={pcOut.result.pulse_bpm} /></b><span className="tiny dim">bpm</span></div>
                   <div className="vital"><div className="tiny mut">breathing</div><b><AnimatedNumber value={pcOut.result.breathing_rpm} decimals={1} /></b><span className="tiny dim">rpm</span></div>

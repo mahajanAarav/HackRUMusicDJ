@@ -25,7 +25,8 @@ Built for HackRU (Gemini track, plus Presage and ElevenLabs prizes).
 
 ### Presage (the heartbeat)
 - Guests can opt in and scan; the backend smooths readings, takes a pre-song baseline, and scores each song's effect on the room.
-- **Browser scan:** an in-browser estimate (our own remote-PPG code), clearly labeled as an estimate.
+- **Presage cloud scan (browser, no app):** with `PRESAGE_API_KEY` set, a guest's 20-second scan is recorded, sent through our server to Presage's Physiology API (key stays server-side, the clip is never stored), and the page shows "measured with presage". The consent text tells guests the clip goes to Presage.
+- **Browser estimate (fallback):** our own in-browser remote-PPG estimate, used when Presage is unavailable or the browser can't record MP4, and labeled as an estimate.
 - **iPhone app (`ios/`):** a thin SwiftUI shell that hosts the site and runs the **Presage SmartSpectra SDK** natively via a JS bridge. See `ios/README.md`. Status is stated honestly in the app and on the page: scans from the app's test sensor are labeled "simulated", real SDK scans "measured with presage smartspectra".
 - **Privacy:** opt-in with a visible indicator; only numbers are stored, never video; pulse/breathing figures are never shown publicly (the room sees "energy rising", not bpm).
 
@@ -40,7 +41,7 @@ npm run dev          # http://localhost:3000  → create room → start the nigh
 npm test             # 26 tests
 npm run sim          # CLI: drive the whole DJ loop with simulated vitals
 ```
-Keys: `GEMINI_API_KEY`, `GROQ_API_KEY` (fallback), `YOUTUBE_API_KEY` (search; 100 searches/day on the free quota, results are cached), `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`. Phones need **https** for mic and camera, so deploy (see `docs/DEPLOY.md`, `render.yaml`).
+Keys: `PRESAGE_API_KEY` (server-side), `GEMINI_API_KEY`, `GROQ_API_KEY` (fallback), `YOUTUBE_API_KEY` (search; 100 searches/day on the free quota, results are cached), `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`. Phones need **https** for mic and camera, so deploy (see `docs/DEPLOY.md`, `render.yaml`).
 
 ## Honest limitations
 - Rooms live in memory (a restart or redeploy clears them); a Supabase schema is included but not wired in.

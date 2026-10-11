@@ -297,3 +297,52 @@ describe("youtube lookup", () => {
     resetYoutubeCache();
   });
 });
+
+import http from "node:http";
+import { fetchResult, seriesValues, summarizeSeries, uploadClip } from "../lib/presage";
+describe("presage cloud client", () => {
+  it("summarizes the shapes a vitals series might arrive in", () => {
+    expect(seriesValues({ "0.5": 70, "1.0": 72 })).toEqual([70, 72]);
+    expect(seriesValues([[0, 70], [1, 72]])).toEqual([70, 72]);
+    expect(seriesValues([{ value: 70 }, { value: 72 }])).toEqual([70, 72]);
+    expect(summarizeSeries({ a: 300, b: 70, c: 72, d: 71, e: 73, f: 74 }, 30, 220)).toBeGreaterThan(69); // 300 is implausible and dropped
+    expect(summarizeSeries({ a: 1, b: 2 }, 30, 220)).toBeNull();
+  });
+
+  it("uploads in parts, completes, polls through 'processing', and returns median vitals", async () => {
+    const calls: string[] = [];
+    let polls = 0;
+    const srv = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        calls.push(`${req.method} ${req.url}`);
+        const send = (code: number, obj?: unknown, extra: Record<string, string> = {}) => { res.writeHead(code, { "content-type": "application/json", ...extra }); res.end(obj === undefined ? "" : JSON.stringify(obj)); };
+        if (req.url?.startsWith("/put/")) return send(200, undefined, { etag: `"etag${req.url.slice(5)}"` });
+        if (req.headers["x-api-key"] !== "good-key") return send(401, { error: "bad key" });
+        const port = (srv.address() as { port: number }).port;
+        if (req.url === "/v1/upload-url") { expect(JSON.parse(body).hr_br.to_process).toBe(true); return send(200, { id: "vid1", upload_id: "up1", urls: [`http://127.0.0.1:${port}/put/1`, `http://127.0.0.1:${port}/put/2`] }); }
+        if (req.url === "/v1/complete") { expect(JSON.parse(body).parts).toEqual([{ ETag: '"etag1"', PartNumber: 1 }, { ETag: '"etag2"', PartNumber: 2 }]); return send(200, {}); }
+        if (req.url === "/retrieve-data") return ++polls < 2 ? send(201) : send(200, { hr: { 1: 80, 2: 71, 3: 72, 4: 73, 5: 72, 6: 71 }, rr: { 1: 15, 2: 14, 3: 15, 4: 16, 5: 15, 6: 15 } });
+        send(404);
+      });
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    const port = (srv.address() as { port: number }).port;
+    process.env.PRESAGE_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.PRESAGE_API_KEY = "good-key";
+    try {
+      const id = await uploadClip(new Uint8Array(6 * 1024 * 1024)); // 6 MB -> two 5 MB-chunk parts, matching 2 urls
+      expect(id).toBe("vid1");
+      expect(await fetchResult(id)).toEqual({ status: "pending" });
+      const done = await fetchResult(id);
+      expect(done).toMatchObject({ status: "ready", pulse_bpm: 72, breathing_rpm: 15 });
+      process.env.PRESAGE_API_KEY = "wrong";
+      await expect(uploadClip(new Uint8Array(20_000))).rejects.toThrow(/key/i);
+    } finally {
+      srv.close();
+      delete process.env.PRESAGE_BASE_URL;
+      delete process.env.PRESAGE_API_KEY;
+    }
+  });
+});
