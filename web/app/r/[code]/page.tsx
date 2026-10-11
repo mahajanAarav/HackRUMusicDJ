@@ -338,7 +338,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
             <div>
               <h1 className="g-title" style={{ margin: "4px 0 6px" }}>pulse check</h1>
               <p className="mut">look at the phone for {PULSE_SECONDS} seconds. the dj reacts to your reading.</p>
-              <span className={`pill sm ${native ? "teal" : ""}`} style={{ marginTop: 8 }}>{native ? (nativeSim ? "app test mode · simulated sensor, not presage" : "✓ measured with presage smartspectra") : "browser estimate · open in the app for presage"}</span>
+              <span className={`pill sm ${native ? "teal" : ""}`} style={{ marginTop: 8 }}>{native ? (nativeSim ? "app test mode · simulated sensor, not presage" : "✓ measured with presage smartspectra") : "browser estimate"}</span>
             </div>
 
             <div className="box row" style={{ gap: 14 }}>

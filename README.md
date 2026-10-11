@@ -1,8 +1,8 @@
 # Biofeedback DJ
 
-**A group DJ that reads the room.** Guests scan a QR code and tell the DJ the vibe with text, photos and voice notes, name artists they like, and optionally scan their pulse with a camera. **Gemini**, acting as an agent, picks every next song and explains why. **ElevenLabs** announces each track. **Presage** pulse and breathing scans show how the room is responding.
+**A group DJ that reads the room.** Guests scan a QR code and tell the DJ the vibe with text, photos and voice notes, name artists they like, and optionally scan their pulse with a camera. **Gemini**, acting as an agent, picks every next song and explains why. **ElevenLabs** announces each track. Optional camera pulse scans (an in-browser estimate) show how the room is responding.
 
-Built for HackRU (Gemini track, plus Presage and ElevenLabs prizes).
+Built for HackRU (Gemini track and ElevenLabs). Presage work is partial: see "Presage" below for exactly what is and isn't done.
 
 ## How it works
 ```
@@ -23,12 +23,11 @@ Built for HackRU (Gemini track, plus Presage and ElevenLabs prizes).
 - **Guardrails enforced server-side:** no repeats (title variants, same video, artist cooldown), vocals only, private vitals never written into public text.
 - **Fallbacks:** if Gemini is rate-limited, a Groq model and then an offline rule-based DJ keep the room playing (host screen with `?dev` shows which engine answered each pick).
 
-### Presage (the heartbeat)
+### Presage (partial: the app does NOT use Presage's measurement today)
 - Guests can opt in and scan; the backend smooths readings, takes a pre-song baseline, and scores each song's effect on the room.
 - **Browser estimate (what runs today):** our own in-browser remote-PPG estimate, clearly labeled as an estimate. This is not Presage's measurement.
 - **Presage Physiology API:** we built and tested a client (`web/lib/presage.ts`) against a mock, then found the live API now accepts only locally preprocessed traces (Presage's Python library), so raw-video upload from a browser no longer works. The path is disabled by default and documented in the code.
 - **iPhone app (`ios/`):** a SwiftUI shell + JS bridge, ready for the SmartSpectra SDK; the SDK hookup (`PresageProvider.swift`) is not finished.
-- **iPhone app (`ios/`):** a thin SwiftUI shell that hosts the site and runs the **Presage SmartSpectra SDK** natively via a JS bridge. See `ios/README.md`. Status is stated honestly in the app and on the page: scans from the app's test sensor are labeled "simulated", real SDK scans "measured with presage smartspectra".
 - **Privacy:** opt-in with a visible indicator; only numbers are stored, never video; pulse/breathing figures are never shown publicly (the room sees "energy rising", not bpm).
 
 ### ElevenLabs (the voice)

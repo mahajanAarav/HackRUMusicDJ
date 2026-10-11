@@ -10,6 +10,8 @@
 
 **Accomplishments:** End-to-end loop from guest input to explained song; 26 automated tests, including checks that fail if a heart-rate number leaks into public text or API responses.
 
+**Presage status (honest):** the pulse scan in the live demo is our own in-browser estimate, not Presage's measurement. We verified our Presage API key, built and tested an API client, and built an iPhone app bridge for the SmartSpectra SDK. Presage's cloud API now requires locally preprocessed traces, and we did not finish the SDK hookup in time.
+
 **What's next:** Server-side autopilot with persistent rooms, Gemini Live hold-to-talk requests, ElevenLabs voice-note transcription, continuous Presage "pulse station" mode.
 
-**Built with:** Gemini API, Presage SmartSpectra, ElevenLabs, YouTube Data API, Next.js, TypeScript, Groq (fallback)
+**Built with:** Gemini API, ElevenLabs, YouTube Data API, Next.js, TypeScript, Groq (fallback)
