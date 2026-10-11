@@ -1,7 +1,13 @@
 import { median } from "./vitals/smooth";
 
 /**
- * Presage Physiology API (cloud). Protocol taken from Presage's own Python client:
+ * DISABLED BY DEFAULT. Checked live on 2026-10-11: Presage retired the raw-video `/v1/*` endpoints used below (they answer
+ * "Missing Authentication Token"). The current `/v2/upload-url` + `/v2/complete` accepts only a *trace* produced by Presage's own
+ * Python preprocessing library (presage-physiology-preprocessing + mediapipe), which cannot run in a browser or on this Node server.
+ * To revive this you would need a small Python service that runs that library on the clip and uploads the trace via /v2.
+ * Enable the old behavior only for testing against a mock with PRESAGE_VIDEO_UPLOAD=1.
+ *
+ * Protocol (v1, from Presage's Python client 1.5.0):
  *   POST /v1/upload-url {file_size, hr_br:{to_process:true}}  -> {id, urls[], upload_id}   (header x-api-key)
  *   PUT  each url with up to 5 MB of the file                  -> ETag header per part
  *   POST /v1/complete {id, upload_id, parts:[{ETag, PartNumber}]}
@@ -11,7 +17,7 @@ import { median } from "./vitals/smooth";
 const BASE = () => process.env.PRESAGE_BASE_URL ?? "https://api.physiology.presagetech.com";
 const CHUNK = 5 * 1024 * 1024;
 
-export const presageConfigured = () => !!process.env.PRESAGE_API_KEY;
+export const presageConfigured = () => !!process.env.PRESAGE_API_KEY && process.env.PRESAGE_VIDEO_UPLOAD === "1";
 
 const headers = () => ({ "x-api-key": process.env.PRESAGE_API_KEY!, "Content-Type": "application/json" });
 

@@ -330,7 +330,7 @@ describe("presage cloud client", () => {
     await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
     const port = (srv.address() as { port: number }).port;
     process.env.PRESAGE_BASE_URL = `http://127.0.0.1:${port}`;
-    process.env.PRESAGE_API_KEY = "good-key";
+    process.env.PRESAGE_API_KEY = "good-key"; process.env.PRESAGE_VIDEO_UPLOAD = "1";
     try {
       const id = await uploadClip(new Uint8Array(6 * 1024 * 1024)); // 6 MB -> two 5 MB-chunk parts, matching 2 urls
       expect(id).toBe("vid1");
