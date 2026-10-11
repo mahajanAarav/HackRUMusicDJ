@@ -17,7 +17,7 @@ declare global {
 }
 type Snap = any;
 
-const TARGET_QUEUE = 2;
+const TARGET_QUEUE = 4; // keep a few songs queued so a suggested artist's block shows up in the queue
 const GUEST_COLORS = ["#f05a38", "#3a49ee", "#f2bf45", "#3dbb9b", "#f06dc7"];
 const fgFor = (bg: string) => (bg === "#3a49ee" ? "#fff" : "#14131c");
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;

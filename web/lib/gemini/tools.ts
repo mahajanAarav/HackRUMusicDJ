@@ -65,12 +65,15 @@ export const functionDeclarations = [
 ] as const;
 
 export const MAX_QUEUE = 4;
+export const MAX_ENERGY_JUMP = 0.35; // without new input, keep the set cohesive: no big swings in intensity
 
 export interface ToolCtx {
   store: Store;
   room: Room;
   seenVideos: Map<string, { title: string; channel: string }>;
   added: QueueItem[];
+  /** True when guests added something since the DJ last decided: only then may the energy jump. */
+  hasFreshInput: boolean;
   skipped: boolean;
   removed: { song: string; artist: string }[];
   skippedItem?: { song: string; artist: string; reason: string };
@@ -129,8 +132,13 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
           const item = parsed.data;
           if (queue.filter((x) => x.status === "queued").length >= MAX_QUEUE) return { error: `Queue is full (${MAX_QUEUE} upcoming). Remove a stale track with update_queue(action="remove") first.` };
           if (!item.has_vocals) return { error: "Only songs with sung or rapped lyrics are allowed. Pick a song with vocals, not an instrumental." };
-          const early = repeatReason(item, queue);
+          const runArtists = (await store.listInputs(code)).filter((i) => i.kind === "artist").map((i) => i.text ?? "");
+          const early = repeatReason(item, queue, runArtists);
           if (early) return { error: early };
+          const prev = [...queue].filter((x) => x.status !== "skipped").sort((a, b) => a.added_at - b.added_at).pop();
+          if (prev && !ctx.hasFreshInput && Math.abs(prev.energy - item.energy) > MAX_ENERGY_JUMP) {
+            return { error: `Keep the set cohesive: the previous track "${prev.song}" has energy ${prev.energy}; without new guest input, stay within ${MAX_ENERGY_JUMP} of it (you chose ${item.energy}). Pick something in the same vein.` };
+          }
           // Never trust a model-supplied id: use one search_track returned, otherwise look the song up ourselves.
           let videoId = item.video_id && ctx.seenVideos.has(item.video_id) ? item.video_id : undefined;
           if (!videoId) {
@@ -139,7 +147,7 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
             videoId = hits[0].video_id;
             hits.forEach((h) => ctx.seenVideos.set(h.video_id, { title: h.title, channel: h.channel }));
           }
-          const late = repeatReason({ ...item, video_id: videoId }, queue); // same video under a different title
+          const late = repeatReason({ ...item, video_id: videoId }, queue, runArtists); // same video under a different title
           if (late) return { error: late };
           // Privacy: nothing numeric about anyone's pulse or breathing is stored on a public-facing item.
           const safe = {

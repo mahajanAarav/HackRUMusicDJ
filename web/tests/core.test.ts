@@ -367,3 +367,48 @@ describe("song ratings", () => {
     expect(JSON.stringify(lines)).not.toContain("secret-guest-id");
   });
 });
+
+import { MAX_ENERGY_JUMP } from "../lib/gemini/tools";
+describe("cohesion and artist blocks", () => {
+  const draft = (song: string, artist: string, energy: number) => ({ song, artist, reason: "r", influenced_by: [], physiological_evidence: { metric: "pulse", summary: "s" }, announcement: "a", energy, has_vocals: true });
+  const runOnce = async (store: MemoryStore, code: string, item: ReturnType<typeof draft>) => {
+    let i = 0;
+    const llm: LlmClient = { async generate() { const parts: Content["parts"] = i++ === 0 ? [{ functionCall: { name: "update_queue", args: { action: "add", item } } }] : [{ text: "ok" }]; return { content: { role: "model", parts }, functionCalls: parts!.flatMap((p) => (p.functionCall ? [p.functionCall] : [])), text: parts![0].text }; } };
+    return runDj(store, code, { llm });
+  };
+
+  it("rejects a big energy swing unless a guest just added input", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Ava");
+    await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "text", text: "party" });
+    expect((await runOnce(store, room.code, draft("Levels", "Avicii", 0.9))).added).toHaveLength(1); // first track, fresh input
+    const swing = await runOnce(store, room.code, draft("Holocene", "Bon Iver", 0.9 - MAX_ENERGY_JUMP - 0.2)); // no new input since
+    expect(swing.added).toHaveLength(0);
+    expect(JSON.stringify(swing.trace)).toMatch(/cohesive/);
+    const gentle = await runOnce(store, room.code, draft("Titanium", "David Guetta", 0.9 - MAX_ENERGY_JUMP + 0.1));
+    expect(gentle.added).toHaveLength(1);
+    await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "text", text: "actually calm now" }); // new direction
+    expect((await runOnce(store, room.code, draft("Sunflower", "Post Malone", 0.2))).added).toHaveLength(1);
+  });
+
+  it("lets a suggested artist play a block of songs in a row, but only up to the cap", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Ava");
+    await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "artist", text: "Kendrick Lamar" });
+    const songs = ["HUMBLE.", "DNA.", "Alright", "Swimming Pools", "Money Trees"];
+    const added: number[] = [];
+    for (const s of songs) added.push((await runOnce(store, room.code, draft(s, "Kendrick Lamar", 0.8))).added.length);
+    expect(added).toEqual([1, 1, 1, 1, 0]); // 4 in a row allowed, the 5th is refused
+  });
+
+  it("still blocks a non-suggested artist from playing back to back", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Ava");
+    await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "text", text: "pop" });
+    expect((await runOnce(store, room.code, draft("Levitating", "Dua Lipa", 0.8))).added).toHaveLength(1);
+    expect((await runOnce(store, room.code, draft("Houdini", "Dua Lipa", 0.8))).added).toHaveLength(0);
+  });
+});

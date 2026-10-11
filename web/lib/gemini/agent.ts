@@ -12,6 +12,8 @@ import { normArtist, usedList } from "../dj/repeats";
 import { executeTool, type ToolCtx } from "./tools";
 
 const MAX_TURNS = 8;
+const SUGGESTED_RUN = 3; // songs in a row from a suggested artist
+const SIMILAR_RUN = 2; // then this many from similar artists
 const BLOCK_MS = 60_000; // after a quota error, skip that provider for a minute so the next one answers instantly
 const MAX_PHOTOS = 4;
 const MAX_VOICE = 3;
@@ -93,10 +95,18 @@ export async function runDj(
   const playing = queue.find((q) => q.status === "playing");
   const pc = room.pulse_check?.result;
   const fresh = inputs.filter((i) => i.created_at > (room.dj_seen_ts ?? 0));
-  // Alternate suggested artists with similar ones so requests get played without the set becoming a playlist of just those artists.
+  // Suggested artists get a BLOCK of songs (up to SUGGESTED_RUN in a row), then a couple by similar artists, then the next suggested artist.
   const artistNames = inputs.filter((i) => i.kind === "artist").map((i) => i.text);
-  const lastBasis = [...queue].reverse().find((q) => q.artist_basis)?.artist_basis;
-  const artistTurn = artistNames.length ? (lastBasis === "suggested" ? "similar" : "suggested") : null;
+  const bases = queue.filter((q) => q.status !== "skipped").map((q) => q.artist_basis).filter(Boolean) as string[];
+  const lastBasis = bases[bases.length - 1];
+  let trailing = 0;
+  for (let k = bases.length - 1; k >= 0 && bases[k] === lastBasis; k--) trailing++;
+  const lastSuggestedArtist = [...queue].reverse().find((q) => q.artist_basis === "suggested")?.artist;
+  const artistTurn: "suggested" | "similar" | null = !artistNames.length ? null
+    : lastBasis === "suggested" ? (trailing < SUGGESTED_RUN ? "suggested" : "similar")
+    : lastBasis === "similar" ? (trailing < SIMILAR_RUN ? "similar" : "suggested")
+    : "suggested";
+  const continueRun = artistTurn === "suggested" && lastBasis === "suggested" && trailing < SUGGESTED_RUN && lastSuggestedArtist;
   // Fairness: make sure quieter guests are heard. Count how many picks each guest's inputs have shaped.
   const heard = new Map<string, number>();
   const owner = new Map(inputs.map((i) => [i.id, i.guest_name]));
@@ -113,9 +123,11 @@ export async function runDj(
       : "",
     queue.filter((q) => q.status === "queued").length ? `Upcoming queue has ${queue.filter((q) => q.status === "queued").length} track(s); use get_queue to see them.` : "",
     artistTurn === "suggested"
-      ? `ARTIST TURN: this pick should be a song BY one of the suggested artists (${artistNames.join(", ")}), choosing the one with the fewest songs used and a song that fits the vibe and heartbeat. Set artist_basis="suggested". Only if none of them fits right now, fall back to artist_basis="vibe".`
+      ? continueRun
+        ? `ARTIST BLOCK: keep going with the same artist: pick another song by ${lastSuggestedArtist} (song ${trailing + 1} of ${SUGGESTED_RUN}) that fits the vibe, so guests hear a run of their artist. Set artist_basis="suggested". Only if ${lastSuggestedArtist} has nothing left that fits, use another suggested artist (${artistNames.join(", ")}).`
+        : `ARTIST BLOCK: start a run of songs by one of the suggested artists (${artistNames.join(", ")}): choose the one with the fewest songs used and a song that fits the vibe. Set artist_basis="suggested". Later picks will continue with the same artist.`
       : artistTurn === "similar"
-        ? `ARTIST TURN: this pick should be by a DIFFERENT artist who sounds similar to one of the suggested artists (${artistNames.join(", ")}), in the same lane and fitting the vibe and heartbeat. Set artist_basis="similar" and similar_to to the suggested artist it resembles. Do not pick the suggested artists themselves this turn.`
+        ? `ARTIST TURN: this pick should be by a DIFFERENT artist who sounds similar to the suggested artists (${artistNames.join(", ")}), in the same lane and fitting the vibe. Set artist_basis="similar" and similar_to to the suggested artist it resembles.`
         : "",
     leastHeard && leastHeard[1] < Math.max(...heard.values())
       ? `Fairness: ${leastHeard[0]}'s inputs have shaped the fewest picks so far (${leastHeard[1]}). Give their input extra weight this time if it fits.`
@@ -131,7 +143,7 @@ export async function runDj(
   await log({ kind: "trigger", text: trigger });
 
   const contents: Content[] = [{ role: "user", parts: [{ text: header }, ...inputParts(inputs, queue)] }];
-  const ctx: ToolCtx = { store, room, seenVideos: new Map(), added: [], skipped: false, removed: [] };
+  const ctx: ToolCtx = { store, room, seenVideos: new Map(), added: [], hasFreshInput: fresh.length > 0, skipped: false, removed: [] };
   let error: string | undefined;
 
   try {

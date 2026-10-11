@@ -91,14 +91,22 @@ export class MockLlm implements LlmClient {
     // Never repeat: skip anything used (any version) and recently used artists.
     const used: string[] = queue.never_repeat_these ?? [];
     const usedTitles = new Set(used.map((u) => normTitle(u.split(" - ")[0])));
-    const recentArtists = new Set(used.slice(-4).map((u) => normArtist(u.split(" - ").slice(1).join(" - "))));
-    const fresh = CATALOG.filter((c) => !usedTitles.has(normTitle(c.song)) && !recentArtists.has(normArtist(c.artist)));
     const named = [...said.matchAll(/\[input_id=[a-z0-9-]+\] ([^\n(]+?) \(suggested by/g)].map((m) => normArtist(m[1]));
+    const recentArtists = new Set(used.slice(-4).map((u) => normArtist(u.split(" - ").slice(1).join(" - "))));
+    const lastArtist = used.length ? normArtist(used[used.length - 1].split(" - ").slice(1).join(" - ")) : "";
+    let streak = 0;
+    for (let k = used.length - 1; k >= 0 && normArtist(used[k].split(" - ").slice(1).join(" - ")) === lastArtist; k--) streak++;
+    // Suggested artists may play a block of songs in a row (up to 4); everyone else keeps the cooldown.
+    const fresh = CATALOG.filter((c) => !usedTitles.has(normTitle(c.song)) && (named.includes(normArtist(c.artist)) ? !(normArtist(c.artist) === lastArtist && streak >= 4) : !recentArtists.has(normArtist(c.artist))));
     const byArtist = fresh.filter((c) => named.includes(normArtist(c.artist)));
     const inGenre = byArtist.length ? byArtist : genres.length ? fresh.filter((c) => genres.includes(c.genre)) : fresh;
     const pool = inGenre.length ? inGenre : fresh;
     if (!pool.length) return turn(undefined, "Nothing left that has not been played.");
     // Break ties pseudo-randomly (by how many songs were used) so genres rotate instead of always taking the same one.
+    // Stay cohesive: without new guest input, keep within a small step of the previous track's energy.
+    const prev = [...(queue.upcoming ?? []), ...(queue.now_playing ? [queue.now_playing] : [])].map((q: any) => q.energy).filter((x: any) => typeof x === "number").pop();
+    const hasNew = /NEW guest input/i.test(said);
+    if (prev !== undefined && !hasNew) target = prev;
     const ranked = [...pool].sort((a, b) => Math.abs(a.energy - target) - Math.abs(b.energy - target));
     const top = ranked.slice(0, Math.min(3, ranked.length));
     const pick = top[used.length % top.length];
