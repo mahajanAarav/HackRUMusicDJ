@@ -237,11 +237,12 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
 
   const LABELS: Record<string, string> = { start: "opening the night", next_song: "picking the next track", new_input: "reacting to a new vibe", pulse_check: "reacting to a pulse check" };
   const runs = (() => {
-    const out: { id: string; label: string; items: any[]; error?: string }[] = [];
+    const out: { id: string; label: string; items: any[]; error?: string; engine?: string }[] = [];
     for (const t of snap?.trace ?? []) {
       if (t.kind === "trigger") out.push({ id: t.id, label: LABELS[String(t.text).split(" ")[0]] ?? "deciding", items: [] });
       else if (out.length && t.kind === "decision") out[out.length - 1].items.push(t);
       else if (out.length && t.kind === "error") out[out.length - 1].error = t.text;
+      else if (out.length && t.kind === "model_text" && t.name === "engine") out[out.length - 1].engine = t.text;
     }
     return out.reverse().slice(0, 6);
   })();
@@ -481,7 +482,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                 {busy && <div className="ln hot">thinking…</div>}
                 {runs.map((r) => (
                   <div key={r.id}>
-                    <div className="ln dim runlabel">▸ {r.label}</div>
+                    <div className="ln dim runlabel">▸ {r.label}{dev && r.engine ? ` · answered by ${r.engine}` : ""}</div>
                     {r.items.length === 0 && !r.error && <div className="ln dim">  kept the queue as it was</div>}
                     {r.items.map((d: any, k: number) => (
                       <div key={d.id}>

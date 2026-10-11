@@ -175,6 +175,7 @@ export async function runDj(
   }
 
   if (idx > 0 && chain[0].name !== "custom") await log({ kind: "model_text", name: "backup", text: chain[idx].name });
+  await log({ kind: "model_text", name: "engine", text: chain[idx].name }); // which model actually answered (shown only with ?dev)
   if (!ctx.added.length && !ctx.skipped && !error && trigger !== "new_input") error = "The DJ did not queue a track.";
   if (!error) await store.updateRoom(code, { dj_seen_ts: seenUpTo });
   // Human-readable decision log (what the UI shows); the raw tool calls stay in the trace for the optional dev view.
