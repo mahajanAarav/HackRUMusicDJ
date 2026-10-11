@@ -7,6 +7,7 @@ import { Equalizer } from "@/components/Equalizer";
 import { Camera, Heart, ImageIcon, Mic, Music, Sparkle } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
 import { api, blobToWavB64, fileToJpegB64 } from "@/lib/client";
+import { DECADES, decadeLabel } from "@/lib/dj/decades";
 import { installFakeNative, isNative, isSimulatedNative, runNativeScan } from "@/lib/native";
 import { RppgMeter } from "@/lib/rppg";
 
@@ -101,6 +102,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
   const mine = (snap?.inputs ?? []).filter((i: any) => i.guest_id === guest.id);
   const myInputIds = new Set(mine.map((i: any) => i.id));
   const roomArtists = (snap?.inputs ?? []).filter((i: any) => i.kind === "artist");
+  const roomDecades = new Set<number>((snap?.inputs ?? []).filter((i: any) => i.kind === "decade").map((i: any) => Number(i.text)));
   const e = snap?.energy;
 
   const add = (body: object, okMsg = "Sent to the DJ ✨") => run(async () => void (await api(`/rooms/${code}/inputs`, { guest_id: guest.id, ...body })), okMsg);
@@ -344,11 +346,23 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
               )}
             </div>
 
+            <div className="box col" style={{ gap: 10 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>pick a decade <span className="pill sm">optional</span></div>
+                <div className="small mut">the dj leans toward songs from the eras the room picks. tap as many as you like.</div>
+              </div>
+              <div className="quick">
+                {DECADES.map((d) => (
+                  <button key={d} className={roomDecades.has(d) ? "on" : ""} disabled={roomDecades.has(d)} onClick={() => add({ kind: "decade", text: String(d) }, `${decadeLabel(d)} added 🕰️`)}>{decadeLabel(d)}</button>
+                ))}
+              </div>
+            </div>
+
             {mine.length > 0 && (
               <div className="col" style={{ gap: 6 }}>
                 <div className="label dim">you’ve told the dj</div>
                 <div className="row wrap" style={{ gap: 6 }}>
-                  {mine.slice(-6).map((i: any) => <span className="chip acc" key={i.id} style={{ animation: "pop .4s var(--ease) both" }}>{i.kind === "text" ? i.text : i.kind === "artist" ? `🎤 ${i.text}` : i.kind === "photo" ? "📸 photo" : "🎙️ voice note"}</span>)}
+                  {mine.slice(-6).map((i: any) => <span className="chip acc" key={i.id} style={{ animation: "pop .4s var(--ease) both" }}>{i.kind === "text" ? i.text : i.kind === "artist" ? `🎤 ${i.text}` : i.kind === "decade" ? `🕰️ ${decadeLabel(Number(i.text))}` : i.kind === "photo" ? "📸 photo" : "🎙️ voice note"}</span>)}
                 </div>
               </div>
             )}

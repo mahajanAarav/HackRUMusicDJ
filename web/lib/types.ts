@@ -32,7 +32,7 @@ export interface VibeInput {
   id: string;
   guest_id: string;
   guest_name: string;
-  kind: "text" | "photo" | "voice" | "artist"; // "artist": text holds an artist name the guest wants to hear
+  kind: "text" | "photo" | "voice" | "artist" | "decade"; // "artist": an artist name; "decade": a start year like "1990"
   text?: string;
   mime?: string;
   data_b64?: string; // photo (jpeg) or voice (wav); small, kept for Gemini multimodal input
@@ -42,7 +42,7 @@ export interface VibeInput {
 export interface Influence {
   input_id: string;
   guest_name?: string;
-  kind: "text" | "photo" | "voice" | "artist";
+  kind: "text" | "photo" | "voice" | "artist" | "decade";
   note: string;
 }
 
@@ -64,6 +64,8 @@ export interface QueueItemDraft {
   physiological_evidence: Evidence;
   announcement: string;
   energy: number; // 0 calm .. 1 intense
+  /** Year the song was released; required when guests have suggested decades. */
+  release_year?: number;
   /** The song has sung or rapped lyrics. Instrumentals are never played. */
   has_vocals: boolean;
   /** Why this artist: a guest suggested them, they sound like one that was suggested, or they simply fit the vibe. */

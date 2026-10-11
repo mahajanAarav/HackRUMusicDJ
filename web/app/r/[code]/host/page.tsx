@@ -8,6 +8,7 @@ import { Check, Copy, Heart, Mic, Play, Skip, Sparkle, Wave } from "@/components
 import { Segmented } from "@/components/Segmented";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/client";
+import { decadeLabel } from "@/lib/dj/decades";
 
 declare global {
   interface Window {
@@ -23,9 +24,9 @@ const fgFor = (bg: string) => (bg === "#3a49ee" ? "#fff" : "#14131c");
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const ago = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 8 ? "now" : s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`; };
 
-const KIND_LABEL: Record<string, string> = { text: "typed a vibe", photo: "sent a photo", voice: "sent a voice note", artist: "suggested an artist" };
-const KIND_TAG: Record<string, string> = { text: "typed", photo: "photo", voice: "voice note", artist: "artist" };
-const KIND_COLOR: Record<string, string> = { text: "pink", photo: "red", voice: "blue", artist: "teal" };
+const KIND_LABEL: Record<string, string> = { text: "typed a vibe", photo: "sent a photo", voice: "sent a voice note", artist: "suggested an artist", decade: "picked a decade" };
+const KIND_TAG: Record<string, string> = { text: "typed", photo: "photo", voice: "voice note", artist: "artist", decade: "decade" };
+const KIND_COLOR: Record<string, string> = { text: "pink", photo: "red", voice: "blue", artist: "teal", decade: "yellow" };
 
 function fmtArgs(name: string, args: any): string {
   if (!args) return "";
@@ -290,7 +291,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
         </div>
         {i.kind === "photo" && <div className="in-img" style={{ marginTop: 8 }}><img src={`/api/rooms/${code}/media/${i.id}`} alt="guest photo" style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }} /></div>}
         {i.kind === "voice" && <div className="bars-wave" style={{ marginTop: 10 }}>{Array.from({ length: 18 }, (_, k) => <i key={k} style={{ animationDelay: `${(k % 6) * 0.12}s`, animationDuration: `${0.8 + (k % 5) * 0.15}s` }} />)}</div>}
-        {(i.kind === "text" || i.kind === "artist") && <div className="quote">{i.kind === "text" ? `“${i.text}”` : i.text}</div>}
+        {(i.kind === "text" || i.kind === "artist" || i.kind === "decade") && <div className="quote">{i.kind === "text" ? `“${i.text}”` : i.kind === "decade" ? `${decadeLabel(Number(i.text))} songs` : i.text}</div>}
         <div className="by">{nameOf(i.guest_id)} · {ago(nowTick - i.created_at)}</div>
       </div>
     );
@@ -462,6 +463,12 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                   {realGuests.length === 0 && <span className="small dim">waiting for the first guest…</span>}
                   {realGuests.map((g) => <span className="pill sm" key={g.id}>{av(g.id)}{g.name}</span>)}
                 </div>
+                {inputs.some((i) => i.kind === "decade") && (
+                  <>
+                    <div className="label dim" style={{ margin: "12px 0 6px" }}>decades</div>
+                    <div className="row wrap" style={{ gap: 6 }}>{[...new Set(inputs.filter((i) => i.kind === "decade").map((i) => Number(i.text)))].sort().map((d) => <span className="pill sm yellow" key={d}>🕰️ {decadeLabel(d)}</span>)}</div>
+                  </>
+                )}
                 {inputs.some((i) => i.kind === "artist") && (
                   <>
                     <div className="label dim" style={{ margin: "12px 0 6px" }}>suggested artists</div>
@@ -549,7 +556,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                   {av(i.guest_id, true)}
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="label dim" style={{ fontSize: 10 }}>{KIND_TAG[i.kind]}</div>
-                    <div className="ellipsis" style={{ fontWeight: 700 }}>{i.kind === "text" ? `“${i.text}”` : i.kind === "artist" ? i.text : i.kind === "photo" ? "a photo" : "a voice note"}</div>
+                    <div className="ellipsis" style={{ fontWeight: 700 }}>{i.kind === "text" ? `“${i.text}”` : i.kind === "artist" ? i.text : i.kind === "decade" ? `${decadeLabel(Number(i.text))} songs` : i.kind === "photo" ? "a photo" : "a voice note"}</div>
                   </div>
                   <span className="tiny dim">{ago(nowTick - i.created_at)}</span>
                 </div>

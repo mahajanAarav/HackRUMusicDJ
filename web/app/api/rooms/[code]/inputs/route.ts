@@ -1,12 +1,13 @@
 import { fail, json, readJson, withRoom } from "@/lib/api";
 import { store } from "@/lib/db";
+import { decadeLabel, parseDecade } from "@/lib/dj/decades";
 import { normArtist } from "@/lib/dj/repeats";
 
 const MAX_B64 = 4_000_000; // ~3MB of media per input
 const MIMES: Record<string, string[]> = { photo: ["image/jpeg", "image/png", "image/webp"], voice: ["audio/wav", "audio/mp3", "audio/ogg", "audio/aac", "audio/flac"] };
 
 export const POST = withRoom(async (req, room) => {
-  const b = await readJson<{ guest_id?: string; kind?: "text" | "photo" | "voice" | "artist"; text?: string; mime?: string; data_b64?: string }>(req);
+  const b = await readJson<{ guest_id?: string; kind?: "text" | "photo" | "voice" | "artist" | "decade"; text?: string; mime?: string; data_b64?: string }>(req);
   const guest = (await store.listGuests(room.code)).find((g) => g.id === b.guest_id);
   if (!guest) return fail("unknown guest_id", 403);
   if (b.kind === "text") {
@@ -29,11 +30,24 @@ export const POST = withRoom(async (req, room) => {
     if (!added.length) return fail("That artist is already in the room's list", 409);
     return json({ added }, 201);
   }
+  if (b.kind === "decade") {
+    // "80s, 90s" adds two decades; each is stored as its start year ("1980"). Duplicates are ignored.
+    const parsed = (b.text ?? "").split(/[,\n;]+/).map((t) => parseDecade(t)).filter((d): d is number => d !== null).slice(0, 8);
+    if (!parsed.length) return fail("pick a decade between the 50s and the 2020s");
+    const have = new Set((await store.listInputs(room.code)).filter((i) => i.kind === "decade").map((i) => Number(i.text)));
+    const added = [];
+    for (const d of new Set(parsed)) {
+      if (have.has(d)) continue;
+      added.push({ ...(await store.addInput(room.code, { guest_id: guest.id, guest_name: guest.name, kind: "decade", text: String(d) })), label: decadeLabel(d) });
+    }
+    if (!added.length) return fail("That decade is already in the room's list", 409);
+    return json({ added }, 201);
+  }
   if (b.kind === "photo" || b.kind === "voice") {
     if (!b.data_b64 || b.data_b64.length > MAX_B64) return fail("data_b64 missing or too large");
     if (!b.mime || !MIMES[b.kind].includes(b.mime)) return fail(`mime must be one of ${MIMES[b.kind].join(", ")}`);
     const { data_b64, ...rest } = await store.addInput(room.code, { guest_id: guest.id, guest_name: guest.name, kind: b.kind, mime: b.mime, data_b64: b.data_b64, text: b.text?.slice(0, 200) });
     return json({ ...rest, has_media: true }, 201);
   }
-  return fail("kind must be text, photo, voice or artist");
+  return fail("kind must be text, photo, voice, artist or decade");
 });

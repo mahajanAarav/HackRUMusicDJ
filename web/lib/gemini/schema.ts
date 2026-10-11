@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const kind = z.enum(["text", "photo", "voice", "artist"]);
+const kind = z.enum(["text", "photo", "voice", "artist", "decade"]);
 
 export const QueueItemDraftSchema = z.object({
   song: z.string().min(1),
@@ -18,6 +18,7 @@ export const QueueItemDraftSchema = z.object({
   announcement: z.string().min(1).max(90),
   energy: z.number().min(0).max(1),
   has_vocals: z.boolean(),
+  release_year: z.number().int().min(1900).max(2035).optional(),
   artist_basis: z.enum(["suggested", "similar", "vibe"]).optional(),
   similar_to: z.string().optional(),
 });
@@ -38,7 +39,7 @@ export const queueItemJsonSchema = {
         properties: {
           input_id: { type: "string" },
           guest_name: { type: "string" },
-          kind: { type: "string", enum: ["text", "photo", "voice", "artist"] },
+          kind: { type: "string", enum: ["text", "photo", "voice", "artist", "decade"] },
           note: { type: "string", description: "What in that input mattered" },
         },
         required: ["input_id", "kind", "note"],
@@ -58,6 +59,7 @@ export const queueItemJsonSchema = {
     },
     announcement: { type: "string", description: "Spoken aloud. MAX 10 words, e.g. \"Next up: Levels by Avicii.\" No explanation: the reason is shown on screen, never spoken." },
     energy: { type: "number", description: "Your estimate of the track's intensity: 0 = very calm, 1 = very intense." },
+    release_year: { type: "integer", description: "Year the song was released. Required when guests have suggested decades." },
     has_vocals: { type: "boolean", description: "true only if the song has sung or rapped lyrics. Never pick instrumentals, classical, ambient, or lyric-free beats." },
     artist_basis: { type: "string", enum: ["suggested", "similar", "vibe"], description: "suggested = by an artist a guest named; similar = by an artist who sounds like a suggested one; vibe = chosen purely from the vibe." },
     similar_to: { type: "string", description: "When artist_basis is similar: the suggested artist this one resembles." },

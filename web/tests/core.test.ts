@@ -369,6 +369,7 @@ describe("song ratings", () => {
 });
 
 import { MAX_ENERGY_JUMP } from "../lib/gemini/tools";
+import { advance } from "../lib/clock";
 describe("cohesion and artist blocks", () => {
   const draft = (song: string, artist: string, energy: number) => ({ song, artist, reason: "r", influenced_by: [], physiological_evidence: { metric: "pulse", summary: "s" }, announcement: "a", energy, has_vocals: true });
   const runOnce = async (store: MemoryStore, code: string, item: ReturnType<typeof draft>) => {
@@ -388,6 +389,7 @@ describe("cohesion and artist blocks", () => {
     expect(JSON.stringify(swing.trace)).toMatch(/cohesive/);
     const gentle = await runOnce(store, room.code, draft("Titanium", "David Guetta", 0.9 - MAX_ENERGY_JUMP + 0.1));
     expect(gentle.added).toHaveLength(1);
+    advance(5); // a real guest input never lands in the same millisecond as the previous decision
     await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "text", text: "actually calm now" }); // new direction
     expect((await runOnce(store, room.code, draft("Sunflower", "Post Malone", 0.2))).added).toHaveLength(1);
   });
@@ -410,5 +412,52 @@ describe("cohesion and artist blocks", () => {
     await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "text", text: "pop" });
     expect((await runOnce(store, room.code, draft("Levitating", "Dua Lipa", 0.8))).added).toHaveLength(1);
     expect((await runOnce(store, room.code, draft("Houdini", "Dua Lipa", 0.8))).added).toHaveLength(0);
+  });
+});
+
+import { decadeLabel, inDecades, parseDecade } from "../lib/dj/decades";
+describe("decades", () => {
+  it("parses and labels decades", () => {
+    expect(parseDecade("80s")).toBe(1980);
+    expect(parseDecade("1990s")).toBe(1990);
+    expect(parseDecade("2000s")).toBe(2000);
+    expect(parseDecade("00s")).toBe(2000);
+    expect(parseDecade("1920s")).toBeNull();
+    expect(parseDecade("banana")).toBeNull();
+    expect([decadeLabel(1980), decadeLabel(2000), decadeLabel(2020)]).toEqual(["80s", "2000s", "2020s"]);
+    expect(inDecades(1994, [1990, 2000])).toBe(true);
+    expect(inDecades(2012, [1990, 2000])).toBe(false);
+  });
+
+  it("requires a release year inside the asked-for decades (suggested artists exempt)", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Ava");
+    await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "decade", text: "1990" });
+    const mk = (over: Record<string, unknown>) => ({ song: "Juicy", artist: "The Notorious B.I.G.", reason: "r", influenced_by: [], physiological_evidence: { metric: "pulse", summary: "s" }, announcement: "a", energy: 0.6, has_vocals: true, ...over });
+    const run = async (item: unknown) => {
+      let i = 0;
+      const llm: LlmClient = { async generate() { const parts: Content["parts"] = i++ === 0 ? [{ functionCall: { name: "update_queue", args: { action: "add", item } } }] : [{ text: "ok" }]; return { content: { role: "model", parts }, functionCalls: parts!.flatMap((p) => (p.functionCall ? [p.functionCall] : [])), text: parts![0].text }; } };
+      return runDj(store, room.code, { llm });
+    };
+    expect((await run(mk({}))).added).toHaveLength(0); // no release_year
+    expect((await run(mk({ release_year: 2011, song: "Levels", artist: "Avicii" }))).added).toHaveLength(0); // wrong era
+    expect((await run(mk({ release_year: 1994 }))).added).toHaveLength(1); // 90s: accepted
+    expect((await run(mk({ release_year: 2011, song: "Dance", artist: "Some Band", artist_basis: "suggested" }))).added).toHaveLength(1); // suggested artist exempt
+  });
+
+  it("the offline DJ sticks to the asked-for decade", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const g = await store.addGuest(room.code, "Ava");
+    await store.addInput(room.code, { guest_id: g.id, guest_name: "Ava", kind: "decade", text: "2010" });
+    const { MockLlm } = await import("../lib/gemini/mock-llm");
+    for (let i = 0; i < 4; i++) {
+      const res = await runDj(store, room.code, { llm: new MockLlm() });
+      expect(res.added).toHaveLength(1);
+      expect(res.added[0].release_year).toBeGreaterThanOrEqual(2010);
+      expect(res.added[0].release_year).toBeLessThan(2020);
+      for (const q of await store.listQueue(room.code)) if (q.status === "queued") await store.updateQueueItem(room.code, q.id, { status: "played" });
+    }
   });
 });

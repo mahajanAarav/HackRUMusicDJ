@@ -1,4 +1,5 @@
 import type { Content, FunctionCall } from "@google/genai";
+import { inDecades } from "../dj/decades";
 import { normArtist, normTitle } from "../dj/repeats";
 import type { LlmClient, LlmTurn } from "./llm";
 
@@ -8,37 +9,37 @@ import type { LlmClient, LlmTurn } from "./llm";
  * Used for dev, tests, and as the last-resort fallback.
  */
 type Genre = "pop" | "hiphop" | "rock" | "edm" | "country" | "jazz" | "chill" | "latin" | "rnb" | "classical" | "indie";
-const CATALOG: { song: string; artist: string; energy: number; genre: Genre }[] = [
-  { song: "Titanium", artist: "David Guetta", energy: 0.92, genre: "edm" },
-  { song: "Levels", artist: "Avicii", energy: 0.95, genre: "edm" },
-  { song: "Clarity", artist: "Zedd", energy: 0.85, genre: "edm" },
-  { song: "Blinding Lights", artist: "The Weeknd", energy: 0.85, genre: "pop" },
-  { song: "Dance Monkey", artist: "Tones and I", energy: 0.75, genre: "pop" },
-  { song: "Levitating", artist: "Dua Lipa", energy: 0.8, genre: "pop" },
-  { song: "Good as Hell", artist: "Lizzo", energy: 0.78, genre: "pop" },
-  { song: "Sunflower", artist: "Post Malone", energy: 0.55, genre: "pop" },
-  { song: "Lose Yourself", artist: "Eminem", energy: 0.88, genre: "hiphop" },
-  { song: "HUMBLE.", artist: "Kendrick Lamar", energy: 0.8, genre: "hiphop" },
-  { song: "Sicko Mode", artist: "Travis Scott", energy: 0.82, genre: "hiphop" },
-  { song: "Juicy", artist: "The Notorious B.I.G.", energy: 0.6, genre: "hiphop" },
-  { song: "Mr. Brightside", artist: "The Killers", energy: 0.85, genre: "rock" },
-  { song: "Seven Nation Army", artist: "The White Stripes", energy: 0.8, genre: "rock" },
-  { song: "Don't Stop Me Now", artist: "Queen", energy: 0.9, genre: "rock" },
-  { song: "Black Hole Sun", artist: "Soundgarden", energy: 0.5, genre: "rock" },
-  { song: "Friends in Low Places", artist: "Garth Brooks", energy: 0.7, genre: "country" },
-  { song: "Wagon Wheel", artist: "Darius Rucker", energy: 0.6, genre: "country" },
-  { song: "Tennessee Whiskey", artist: "Chris Stapleton", energy: 0.3, genre: "country" },
-  { song: "Feeling Good", artist: "Nina Simone", energy: 0.4, genre: "jazz" },
-  { song: "Put Your Records On", artist: "Corinne Bailey Rae", energy: 0.4, genre: "chill" },
-  { song: "Banana Pancakes", artist: "Jack Johnson", energy: 0.3, genre: "chill" },
-  { song: "Holocene", artist: "Bon Iver", energy: 0.2, genre: "indie" },
-  { song: "Electric Feel", artist: "MGMT", energy: 0.65, genre: "indie" },
-  { song: "Dog Days Are Over", artist: "Florence + The Machine", energy: 0.8, genre: "indie" },
-  { song: "Despacito", artist: "Luis Fonsi", energy: 0.7, genre: "latin" },
-  { song: "Danza Kuduro", artist: "Don Omar", energy: 0.9, genre: "latin" },
-  { song: "Bailando", artist: "Enrique Iglesias", energy: 0.75, genre: "latin" },
-  { song: "Redbone", artist: "Childish Gambino", energy: 0.35, genre: "rnb" },
-  { song: "Get Lucky", artist: "Daft Punk", energy: 0.7, genre: "rnb" },
+const CATALOG: { song: string; artist: string; energy: number; genre: Genre; year?: number }[] = [
+  { song: "Titanium", artist: "David Guetta", energy: 0.92, genre: "edm", year: 2011 },
+  { song: "Levels", artist: "Avicii", energy: 0.95, genre: "edm", year: 2011 },
+  { song: "Clarity", artist: "Zedd", energy: 0.85, genre: "edm", year: 2012 },
+  { song: "Blinding Lights", artist: "The Weeknd", energy: 0.85, genre: "pop", year: 2019 },
+  { song: "Dance Monkey", artist: "Tones and I", energy: 0.75, genre: "pop", year: 2019 },
+  { song: "Levitating", artist: "Dua Lipa", energy: 0.8, genre: "pop", year: 2020 },
+  { song: "Good as Hell", artist: "Lizzo", energy: 0.78, genre: "pop", year: 2016 },
+  { song: "Sunflower", artist: "Post Malone", energy: 0.55, genre: "pop", year: 2018 },
+  { song: "Lose Yourself", artist: "Eminem", energy: 0.88, genre: "hiphop", year: 2002 },
+  { song: "HUMBLE.", artist: "Kendrick Lamar", energy: 0.8, genre: "hiphop", year: 2017 },
+  { song: "Sicko Mode", artist: "Travis Scott", energy: 0.82, genre: "hiphop", year: 2018 },
+  { song: "Juicy", artist: "The Notorious B.I.G.", energy: 0.6, genre: "hiphop", year: 1994 },
+  { song: "Mr. Brightside", artist: "The Killers", energy: 0.85, genre: "rock", year: 2003 },
+  { song: "Seven Nation Army", artist: "The White Stripes", energy: 0.8, genre: "rock", year: 2003 },
+  { song: "Don't Stop Me Now", artist: "Queen", energy: 0.9, genre: "rock", year: 1978 },
+  { song: "Black Hole Sun", artist: "Soundgarden", energy: 0.5, genre: "rock", year: 1994 },
+  { song: "Friends in Low Places", artist: "Garth Brooks", energy: 0.7, genre: "country", year: 1990 },
+  { song: "Wagon Wheel", artist: "Darius Rucker", energy: 0.6, genre: "country", year: 2013 },
+  { song: "Tennessee Whiskey", artist: "Chris Stapleton", energy: 0.3, genre: "country", year: 2015 },
+  { song: "Feeling Good", artist: "Nina Simone", energy: 0.4, genre: "jazz", year: 1965 },
+  { song: "Put Your Records On", artist: "Corinne Bailey Rae", energy: 0.4, genre: "chill", year: 2006 },
+  { song: "Banana Pancakes", artist: "Jack Johnson", energy: 0.3, genre: "chill", year: 2005 },
+  { song: "Holocene", artist: "Bon Iver", energy: 0.2, genre: "indie", year: 2011 },
+  { song: "Electric Feel", artist: "MGMT", energy: 0.65, genre: "indie", year: 2007 },
+  { song: "Dog Days Are Over", artist: "Florence + The Machine", energy: 0.8, genre: "indie", year: 2008 },
+  { song: "Despacito", artist: "Luis Fonsi", energy: 0.7, genre: "latin", year: 2017 },
+  { song: "Danza Kuduro", artist: "Don Omar", energy: 0.9, genre: "latin", year: 2010 },
+  { song: "Bailando", artist: "Enrique Iglesias", energy: 0.75, genre: "latin", year: 2014 },
+  { song: "Redbone", artist: "Childish Gambino", energy: 0.35, genre: "rnb", year: 2016 },
+  { song: "Get Lucky", artist: "Daft Punk", energy: 0.7, genre: "rnb", year: 2013 },
 ];
 
 const KEYWORDS: [Genre, RegExp][] = [
@@ -99,8 +100,10 @@ export class MockLlm implements LlmClient {
     // Suggested artists may play a block of songs in a row (up to 4); everyone else keeps the cooldown.
     const fresh = CATALOG.filter((c) => !usedTitles.has(normTitle(c.song)) && (named.includes(normArtist(c.artist)) ? !(normArtist(c.artist) === lastArtist && streak >= 4) : !recentArtists.has(normArtist(c.artist))));
     const byArtist = fresh.filter((c) => named.includes(normArtist(c.artist)));
-    const inGenre = byArtist.length ? byArtist : genres.length ? fresh.filter((c) => genres.includes(c.genre)) : fresh;
-    const pool = inGenre.length ? inGenre : fresh;
+    const decades = [...said.matchAll(/\[input_id=[a-z0-9-]+\] (\d{2}s|\d{4}s) \(suggested by/g)].map((m) => { const t = m[1]; const n = Number(t.slice(0, -1)); return t.length === 3 ? (n >= 30 ? 1900 + n : 2000 + n) : n; });
+    const inEra = decades.length ? fresh.filter((c) => c.year !== undefined && inDecades(c.year, decades)) : fresh;
+    const inGenre = byArtist.length ? byArtist : genres.length ? inEra.filter((c) => genres.includes(c.genre)) : inEra;
+    const pool = inGenre.length ? inGenre : inEra.length ? inEra : fresh;
     if (!pool.length) return turn(undefined, "Nothing left that has not been played.");
     // Break ties pseudo-randomly (by how many songs were used) so genres rotate instead of always taking the same one.
     // Stay cohesive: without new guest input, keep within a small step of the previous track's energy.
@@ -125,6 +128,7 @@ export class MockLlm implements LlmClient {
       announcement: `Next up: ${pick.song} by ${pick.artist}.`,
       energy: pick.energy,
       has_vocals: true,
+      release_year: pick.year,
     };
     return turn({ name: "update_queue", args: { action: "add", item } });
   }

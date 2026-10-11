@@ -229,3 +229,6 @@ textarea.field { resize: none; }
 .widgets { display: grid; gap: 18px; grid-template-columns: 1fr; }
 @media (min-width: 700px) { .widgets { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; } }
 .brain-scroll { max-height: 230px; overflow-y: auto; padding-right: 6px; }
+
+.quick button.on { background: var(--yellow); }
+.quick button:disabled { cursor: default; transform: none; box-shadow: none; }

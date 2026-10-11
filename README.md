@@ -21,6 +21,7 @@ Built for HackRU (Gemini track and ElevenLabs). Presage work is partial: see "Pr
 - **Structured output:** every queue item is schema-validated (song, artist, reason, which guest inputs influenced it, vitals evidence, energy, has_vocals, artist basis).
 - **Judgment, not rules:** genre and mood come from guests; intensity comes from heartbeat scans and how earlier songs moved the room. Suggested artists alternate with similar artists. The DJ is told which guest has been heard least.
 - **Guardrails enforced server-side:** no repeats (title variants, same video, artist cooldown), vocals only, private vitals never written into public text.
+- **Optional decades:** guests can tap eras (50s to 2020s); the DJ blends them and the server checks each pick's release year fits (suggested artists are exempt).
 - **Learns from the room:** guests rate each song 1 to 5 for how well it matched the vibe; the DJ sees the ratings (never who gave them) and favors what scored well.
 - **Fallbacks:** if Gemini is rate-limited, a Groq model and then an offline rule-based DJ keep the room playing (host screen with `?dev` shows which engine answered each pick).
 

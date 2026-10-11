@@ -1,5 +1,6 @@
 import type { Store } from "../db/store";
 import { endCurrent } from "../dj/playback";
+import { decadeLabel, inDecades } from "../dj/decades";
 import { stripVitals } from "../dj/privacy";
 import { summarizeRatings } from "../dj/ratings";
 import { repeatReason, usedList } from "../dj/repeats";
@@ -133,6 +134,12 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
           if (queue.filter((x) => x.status === "queued").length >= MAX_QUEUE) return { error: `Queue is full (${MAX_QUEUE} upcoming). Remove a stale track with update_queue(action="remove") first.` };
           if (!item.has_vocals) return { error: "Only songs with sung or rapped lyrics are allowed. Pick a song with vocals, not an instrumental." };
           const runArtists = (await store.listInputs(code)).filter((i) => i.kind === "artist").map((i) => i.text ?? "");
+          const decades = (await store.listInputs(code)).filter((i) => i.kind === "decade").map((i) => Number(i.text)).filter(Number.isFinite);
+          if (decades.length && item.artist_basis !== "suggested") {
+            const labels = decades.map(decadeLabel).join(", ");
+            if (item.release_year == null) return { error: `Guests asked for these decades: ${labels}. Set release_year, and pick a song released in one of them.` };
+            if (!inDecades(item.release_year, decades)) return { error: `"${item.song}" (${item.release_year}) is outside the decades guests asked for (${labels}). Pick a song released in one of them.` };
+          }
           const early = repeatReason(item, queue, runArtists);
           if (early) return { error: early };
           const prev = [...queue].filter((x) => x.status !== "skipped").sort((a, b) => a.added_at - b.added_at).pop();

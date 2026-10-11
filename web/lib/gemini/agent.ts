@@ -6,6 +6,7 @@ import { GroqLlm } from "./groq";
 import { GeminiLlm, type LlmClient } from "./llm";
 import { MockLlm } from "./mock-llm";
 import { systemPrompt } from "./prompts";
+import { decadeLabel } from "../dj/decades";
 import { publicTrace, safeToolArgs, stripVitals } from "../dj/privacy";
 import { ratingsForPrompt } from "../dj/ratings";
 import { normArtist, usedList } from "../dj/repeats";
@@ -44,6 +45,7 @@ export function defaultLlm(): LlmClient {
 function inputParts(inputs: VibeInput[], queue: QueueItem[]): Part[] {
   const texts = inputs.filter((i) => i.kind === "text").slice(-MAX_TEXT);
   const artists = inputs.filter((i) => i.kind === "artist");
+  const decades = inputs.filter((i) => i.kind === "decade");
   const photos = inputs.filter((i) => i.kind === "photo" && i.data_b64).slice(-MAX_PHOTOS);
   const voices = inputs.filter((i) => i.kind === "voice" && i.data_b64).slice(-MAX_VOICE);
   const parts: Part[] = [];
@@ -58,6 +60,9 @@ function inputParts(inputs: VibeInput[], queue: QueueItem[]): Part[] {
       text: "Artists guests want to hear (draw songs from them when they fit the vibe and the room's heartbeat, and weave in similar artists; songs already used from each in brackets):\n" +
         artists.map((a) => `- [input_id=${a.id}] ${a.text} (suggested by ${a.guest_name}; ${used(a.text ?? "")} used)`).join("\n"),
     });
+  }
+  if (decades.length) {
+    parts.push({ text: "Decades guests want (blend them; every pick that is not by a suggested artist must be released in one of these):\n" + decades.map((d) => `- [input_id=${d.id}] ${decadeLabel(Number(d.text))} (suggested by ${d.guest_name})`).join("\n") });
   }
   for (const p of photos) {
     parts.push({ text: `Photo from ${p.guest_name} [input_id=${p.id}]:` }, { inlineData: { mimeType: p.mime ?? "image/jpeg", data: p.data_b64! } });
