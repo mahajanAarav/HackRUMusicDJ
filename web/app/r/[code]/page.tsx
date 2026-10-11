@@ -39,6 +39,8 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
   const [native, setNative] = useState(false);
   const [rated, setRated] = useState<Record<string, number>>({});
   const [cloudWait, setCloudWait] = useState(false);
+  const [cloudStage, setCloudStage] = useState("");
+  const [estBpm, setEstBpm] = useState<number | null>(null);
   const [pcSource, setPcSource] = useState<"presage" | "webcam" | null>(null);
   const [nativeSim, setNativeSim] = useState(false);
   useEffect(() => {
@@ -131,9 +133,11 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
     const up = await fetch(`/api/rooms/${code}/scan-video?guest_id=${guest!.id}`, { method: "POST", headers: { "Content-Type": blob.type || "video/mp4" }, body: blob });
     const j = await up.json().catch(() => ({}));
     if (!up.ok) throw new Error(j.error ?? "upload failed");
-    for (let i = 0; i < 40; i++) {
+    const started = Date.now();
+    for (let i = 0; i < 80; i++) {
       await new Promise((r) => setTimeout(r, 3000));
       const r = await api<any>(`/rooms/${code}/scan-video?guest_id=${guest!.id}&id=${encodeURIComponent(j.id)}`);
+      if (r.status !== "ready") setCloudStage(`${r.stage ?? "working"} · ${Math.round((Date.now() - started) / 1000)}s`);
       if (r.status === "ready") return r as { pulse_bpm: number | null; breathing_rpm: number | null; n_samples: number };
     }
     throw new Error("Presage took too long");
@@ -224,6 +228,8 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
       const est = meter.analyze();
       let measured: { pulse_bpm: number | null; breathing_rpm: number | null; confidence?: number; n_samples?: number; source: "presage" | "webcam" } | null = est.pulse_bpm == null ? null : { ...est, source: "webcam" };
       if (clipBlob && clipBlob.size > 10_000) {
+        setEstBpm(est.pulse_bpm);
+        setCloudStage("sending the clip");
         setCloudWait(true);
         try {
           const r = await sendToPresage(clipBlob);
@@ -232,6 +238,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
           toast.show(`Presage unavailable (${(er as Error).message}). Using the browser estimate.`, "err");
         } finally {
           setCloudWait(false);
+          setCloudStage("");
         }
       }
       if (!measured) {
@@ -379,6 +386,12 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
                 {pc === null ? <div><Heart width={34} height={34} className="heart" /><div style={{ marginTop: 4 }}>{sensing ? "start" : "opt in first"}</div></div> : <div style={{ fontSize: 34 }}>{cloudWait ? <><span className="spinner" /><div style={{ fontSize: 11, marginTop: 4 }}>presage…</div></> : liveBpm ? <>{Math.round(liveBpm)}<div style={{ fontSize: 11, opacity: .8 }}>bpm · {pc}s</div></> : pc}</div>}
               </button>
             </div>
+            {cloudWait && (
+              <div className="box flat col" style={{ gap: 4, textAlign: "center" }}>
+                <div style={{ fontWeight: 800 }}>presage is measuring… {cloudStage}</div>
+                {estBpm != null && <div className="small mut">live estimate meanwhile: about {Math.round(estBpm)} bpm (final reading replaces it)</div>}
+              </div>
+            )}
             {pc !== null && camOn && <p className="small mut" style={{ textAlign: "center" }}>hold the phone so your face and shoulders are in view, face a light, and hold still.</p>}
 
             {pcOut && (

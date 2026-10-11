@@ -359,9 +359,9 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                       <button className="btn primary big" onClick={() => setStarted(true)}><Play width={18} height={18} /> start the night</button>
                     ) : (
                       <>
-                        <button className="btn" disabled={busy || !playing} onClick={() => advance("skip")}><Skip width={16} height={16} /> skip</button>
-                        <button className="btn" disabled={busy} onClick={() => askDj()}>{busy ? <span className="spinner" /> : <Sparkle width={16} height={16} />} ask dj</button>
-                        <button className="btn" disabled={!playing || announcing} onClick={togglePlayback}>{playPaused ? <><Play width={16} height={16} /> resume</> : <>⏸ pause</>}</button>
+                        <button className="btn big" style={{ minWidth: 130 }} disabled={busy || !playing} onClick={() => advance("skip")}><Skip width={20} height={20} /> skip</button>
+                        {dev && <button className="btn" disabled={busy} onClick={() => askDj()}>{busy ? <span className="spinner" /> : <Sparkle width={16} height={16} />} ask dj (dev)</button>}
+                        <button className="btn big" style={{ minWidth: 150 }} disabled={!playing || announcing} onClick={togglePlayback}>{playPaused ? <><Play width={20} height={20} /> resume</> : <>⏸ pause</>}</button>
                         {dev && <button className={`btn ghost ${paused ? "yellow" : ""}`} onClick={() => setPaused((v) => !v)} title="dev: stop the dj from making requests on its own">{paused ? "▶ resume ai" : "⏸ pause ai"}</button>}
                       </>
                     )}
@@ -500,6 +500,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
               </div>
             )}
 
+            {dev && (
             <div className="box">
               <div className="label dim" style={{ marginBottom: 8 }}>dj brain</div>
               <div className="brain brain-scroll">
@@ -536,6 +537,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                 </div>
               )}
             </div>
+            )}
 
             <div className="box">
               <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
