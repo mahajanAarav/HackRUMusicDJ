@@ -46,6 +46,9 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   const [playPaused, setPlayPaused] = useState(false);
   const pausedRef = useRef(false);
   const mockElapsed = useRef(0);
+  const trackStarted = useRef(false); // this track has actually begun playing
+  const trackFailed = useRef(false); // YouTube refused to play this track
+  const announcingRef = useRef(false);
   const [dev, setDev] = useState(false);
   const [time, setTime] = useState({ ct: 0, dur: 0, pct: 0 });
   const [err, setErr] = useState("");
@@ -143,13 +146,17 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   useEffect(() => {
     if (!started || !playing || lastPlayed.current === playing.id) return;
     lastPlayed.current = playing.id;
+    trackStarted.current = false;
+    trackFailed.current = false;
     mockElapsed.current = 0;
     pausedRef.current = false;
     setPlayPaused(false);
     if (timer.current) clearTimeout(timer.current);
     (async () => {
+      announcingRef.current = true;
       setAnnouncing(true);
       await speak(playing);
+      announcingRef.current = false;
       setAnnouncing(false);
       if (!playing.video_id.startsWith("mock:")) {
         if (playerReady && player.current?.loadVideoById) player.current.loadVideoById(playing.video_id);
@@ -195,13 +202,13 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
       player.current = new window.YT.Player("yt", {
         width: "100%", height: "100%", playerVars: { playsinline: 1, rel: 0 },
         events: {
-          onReady: () => { setPlayerReady(true); if (pendingVideo.current) player.current.loadVideoById(pendingVideo.current); },
+          onReady: () => { if (new URLSearchParams(window.location.search).has("dev")) (window as any).__ytPlayer = player.current; setPlayerReady(true); if (pendingVideo.current) player.current.loadVideoById(pendingVideo.current); },
           onStateChange: (ev: any) => {
             if (ev.data === 0) advance("next");
-            else if (ev.data === 1) { pausedRef.current = false; setPlayPaused(false); } // playing (also covers the YouTube controls)
+            else if (ev.data === 1) { trackStarted.current = true; pausedRef.current = false; setPlayPaused(false); } // playing (also covers the YouTube controls)
             else if (ev.data === 2) { pausedRef.current = true; setPlayPaused(true); } // paused
           },
-          onError: () => advance("next"), // embedding disabled / removed video: skip it
+          onError: () => { trackFailed.current = true; advance("next"); }, // embedding disabled / removed video: skip it
         },
       });
     }, 300);
@@ -214,6 +221,8 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
     const mock = playing.video_id.startsWith("mock:");
     const t = setInterval(() => {
       if (!mock) {
+        // Watchdog: the 'ended' event fires once, and advance() is ignored while the DJ is busy. Keep retrying until the next song starts.
+        if (!announcingRef.current && ((trackStarted.current && player.current?.getPlayerState?.() === 0) || trackFailed.current)) advance("next");
         const dur = player.current?.getDuration?.() ?? 0;
         if (dur > 0) {
           const ct = player.current.getCurrentTime?.() ?? 0;
