@@ -80,7 +80,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
     return (
       <div className="app">
         <div className="guest-app" style={{ paddingTop: 40 }}>
-          <div className="logo" style={{ marginBottom: 30 }}><span className="logo-mark"><Music /></span> biofeedback dj</div>
+          <div className="logo" style={{ marginBottom: 30 }}><span className="logo-mark"><Music /></span> dj sense</div>
           <div className="label dim">you’re joining</div>
           <h1 className="g-title">{roomName}</h1>
           <div className="box yellow col" style={{ gap: 12, animation: "pop .5s var(--ease) both" }}>

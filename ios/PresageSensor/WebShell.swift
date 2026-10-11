@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 
-/// Hosts the Biofeedback DJ site in a web view and exposes the Presage scan to it.
+/// Hosts the DJ Sense site in a web view and exposes the Presage scan to it.
 ///   web -> native:  window.webkit.messageHandlers.presage.postMessage({ type: "start", seconds: 20 })
 ///   native -> web:  window "presage-event" CustomEvent with { type: "progress" | "result" | "error" | "cancelled", ... }
 struct WebShell: UIViewRepresentable {

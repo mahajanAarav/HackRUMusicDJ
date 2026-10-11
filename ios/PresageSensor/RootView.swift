@@ -17,7 +17,7 @@ struct RootView: View {
             }
         } else {
             Form {
-                Section("Your Biofeedback DJ site") {
+                Section("Your DJ Sense site") {
                     TextField("https://your-site.onrender.com", text: $draft)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     Button("Open") { siteURL = draft.trimmingCharacters(in: .whitespaces) }.disabled(URL(string: draft) == nil || draft.isEmpty)

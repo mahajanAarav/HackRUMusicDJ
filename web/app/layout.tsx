@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
-export const metadata: Metadata = { title: "Biofeedback DJ", description: "A group DJ that reads the room." };
+export const metadata: Metadata = { title: "DJ Sense", description: "A group DJ that reads the room." };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0a0a0f" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,4 +1,4 @@
-# Biofeedback DJ iPhone app (Presage SmartSpectra)
+# DJ Sense iPhone app (Presage SmartSpectra)
 
 A thin SwiftUI shell. It opens the deployed web app in a web view and runs the **Presage SmartSpectra SDK** natively
 for the pulse scan. The web app asks for a scan (`window.webkit.messageHandlers.presage.postMessage({type:"start",seconds:20})`),

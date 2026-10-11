@@ -38,7 +38,7 @@ export default function Home() {
     <div className="app landing">
       <div className="landing-inner">
         <div>
-          <div className="logo"><span className="logo-mark"><Wave /></span> biofeedback dj</div>
+          <div className="logo"><span className="logo-mark"><Wave /></span> dj sense</div>
           <h1 className="hero-title">the dj that <span className="hl">feels the room.</span></h1>
           <p style={{ fontSize: 18, maxWidth: 440, fontWeight: 500 }} className="mut">guests drop a vibe in any genre. pulse scans show how the room feels. gemini picks every next song and tells you exactly why.</p>
           <div className="row wrap" style={{ marginTop: 22 }}>

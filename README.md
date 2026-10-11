@@ -1,4 +1,4 @@
-# Biofeedback DJ
+# DJ Sense
 
 **A group DJ that reads the room.** Guests scan a QR code and tell the DJ the vibe with text, photos and voice notes, name artists they like, and optionally scan their pulse with a camera. **Gemini**, acting as an agent, picks every next song and explains why. **ElevenLabs** announces each track. Optional camera pulse scans (an in-browser estimate) show how the room is responding.
 
