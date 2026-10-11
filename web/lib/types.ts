@@ -12,6 +12,14 @@ export interface VitalsReading {
   source: "presage" | "simulated" | "webcam";
 }
 
+/** A guest's 1-5 rating of how well a song matched the vibe. One per guest per song (re-rating replaces it). */
+export interface Rating {
+  queue_id: string;
+  guest_id: string;
+  value: number;
+  at: number;
+}
+
 export interface Guest {
   id: string;
   name: string;

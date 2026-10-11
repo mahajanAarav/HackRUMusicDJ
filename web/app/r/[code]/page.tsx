@@ -37,6 +37,7 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
   const [liveBpm, setLiveBpm] = useState<number | null>(null);
   const toast = useToast();
   const [native, setNative] = useState(false);
+  const [rated, setRated] = useState<Record<string, number>>({});
   const [cloudWait, setCloudWait] = useState(false);
   const [pcSource, setPcSource] = useState<"presage" | "webcam" | null>(null);
   const [nativeSim, setNativeSim] = useState(false);
@@ -250,6 +251,10 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
     }
   }
 
+  const rate = (queueId: string, value: number) => {
+    setRated((r) => ({ ...r, [queueId]: value }));
+    run(async () => void (await api(`/rooms/${code}/ratings`, { guest_id: guest!.id, queue_id: queueId, value })), "thanks, the dj will learn from that");
+  };
   const circ = 2 * Math.PI * 88;
   const COLORS = ["#f05a38", "#3a49ee", "#f2bf45", "#3dbb9b", "#f06dc7"];
   const myColor = COLORS[Math.max(0, (snap?.guests ?? []).filter((g: any) => !g.simulated).findIndex((g: any) => g.id === guest.id)) % COLORS.length];
@@ -276,6 +281,17 @@ export default function Guest({ params }: { params: Promise<{ code: string }> })
               <div className="ellipsis" style={{ fontWeight: 800, fontSize: 17 }}>{playing.song}</div>
               <div className="small ellipsis">{playing.artist}</div>
             </div>
+          </div>
+        )}
+        {playing && (
+          <div className="box flat col" style={{ gap: 6, marginBottom: 14, animation: "fadeUp .4s var(--ease) both" }} key={`rate-${playing.id}`}>
+            <div className="label dim">how well does this match the vibe?</div>
+            <div className="row" style={{ gap: 6 }}>
+              {[1, 2, 3, 4, 5].map((v) => (
+                <button key={v} className="btn sm" aria-label={`${v} out of 5`} onClick={() => rate(playing.id, v)} style={{ flex: 1, background: (rated[playing.id] ?? 0) >= v ? "var(--yellow)" : undefined, fontSize: 18 }}>★</button>
+              ))}
+            </div>
+            <div className="tiny mut">{rated[playing.id] ? `you gave it ${rated[playing.id]}/5` : "tap a star: the dj learns from your ratings"}</div>
           </div>
         )}
 

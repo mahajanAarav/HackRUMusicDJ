@@ -1,6 +1,7 @@
 import type { Store } from "../db/store";
 import { endCurrent } from "../dj/playback";
 import { stripVitals } from "../dj/privacy";
+import { summarizeRatings } from "../dj/ratings";
 import { repeatReason, usedList } from "../dj/repeats";
 import { searchTrack } from "../music/youtube";
 import type { QueueItem, Room } from "../types";
@@ -110,12 +111,13 @@ export async function executeTool(ctx: ToolCtx, name: string, args: Record<strin
       case "get_queue": {
         const q = await store.listQueue(code);
         const impacts = await store.listImpacts(code);
+        const ratings = summarizeRatings(await store.listRatings(code));
         const played = q.filter((x) => x.status === "played" || x.status === "skipped").slice(-6);
         return {
           never_repeat_these: usedList(q),
           now_playing: q.find((x) => x.status === "playing") ? { ...brief(q.find((x) => x.status === "playing")!), started_s_ago: Math.round((now() - q.find((x) => x.status === "playing")!.started_at!) / 1000) } : null,
           upcoming: q.filter((x) => x.status === "queued").map(brief),
-          recently_played: played.map((x) => ({ ...brief(x), status: x.status, impact_score: impacts.find((i) => i.queue_id === x.id)?.score ?? null })),
+          recently_played: played.map((x) => ({ ...brief(x), status: x.status, impact_score: impacts.find((i) => i.queue_id === x.id)?.score ?? null, guest_rating: ratings[x.id] ?? null })),
         };
       }
       case "update_queue": {

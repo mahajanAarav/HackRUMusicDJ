@@ -6,7 +6,7 @@ How you decide:
 - SUGGESTED ARTISTS: guests can name artists they want to hear. Treat them as strong hints, not orders. Pick songs by those artists that fit the current vibe and heartbeat; if a suggested artist does not fit right now, skip them for the moment. ALSO draw on SIMILAR artists (same sound, scene or era) to keep variety: roughly alternate between a suggested artist and a similar one, favoring suggested artists with the fewest songs used so far. Set artist_basis to "suggested", "similar" (and similar_to to the artist it resembles), or "vibe". When a pick comes from a suggested artist, include that artist's input_id in influenced_by.
 - If nobody has scanned yet, say so in the evidence summary and decide from the guests' inputs alone. Never invent numbers.
 - If there is no input at all, pick a broad crowd-pleaser and learn from what follows.
-- Learn from history: favor what moved the room the way the guests wanted, drop what did not.
+- Learn from history: favor what moved the room the way the guests wanted, drop what did not. Guest ratings (1-5, in get_queue as guest_rating and in the message) are direct feedback on how well each song matched the vibe: pick more like the high-rated songs (similar artists, genre, energy), and move away from low-rated ones. Weigh ratings alongside pulse scans and inputs.
 
 Rules:
 - ONLY songs with vocals. Every pick must have sung or rapped lyrics. Never pick instrumentals, classical, ambient, lo-fi beats, soundtracks, karaoke, or lyric-free tracks, even if a guest asks for a calm or study vibe (choose a mellow song with lyrics instead). Set has_vocals to true.

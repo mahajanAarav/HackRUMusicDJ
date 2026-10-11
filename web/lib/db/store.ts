@@ -1,4 +1,4 @@
-import type { Guest, QueueItem, Room, SongImpact, TraceEvent, VibeInput, VitalsReading, VitalsSourceKind } from "../types";
+import type { Guest, QueueItem, Rating, Room, SongImpact, TraceEvent, VibeInput, VitalsReading, VitalsSourceKind } from "../types";
 
 /** Persistence boundary. MemoryStore is the demo default; a Supabase impl slots in behind this. */
 export interface Store {
@@ -23,6 +23,9 @@ export interface Store {
 
   listImpacts(code: string): Promise<SongImpact[]>;
   addImpact(code: string, impact: SongImpact): Promise<void>;
+
+  setRating(code: string, r: Omit<Rating, "at">): Promise<void>;
+  listRatings(code: string): Promise<Rating[]>;
 
   listTrace(code: string, sinceTs?: number): Promise<TraceEvent[]>;
   addTrace(code: string, ev: Omit<TraceEvent, "id" | "ts">): Promise<TraceEvent>;

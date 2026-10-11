@@ -7,6 +7,7 @@ import { GeminiLlm, type LlmClient } from "./llm";
 import { MockLlm } from "./mock-llm";
 import { systemPrompt } from "./prompts";
 import { publicTrace, safeToolArgs, stripVitals } from "../dj/privacy";
+import { ratingsForPrompt } from "../dj/ratings";
 import { normArtist, usedList } from "../dj/repeats";
 import { executeTool, type ToolCtx } from "./tools";
 
@@ -88,7 +89,7 @@ export async function runDj(
   const startedAt = now();
   const log = (ev: Omit<TraceEvent, "id" | "ts">) => store.addTrace(code, ev);
 
-  const [guests, inputs, queue] = await Promise.all([store.listGuests(code), store.listInputs(code), store.listQueue(code)]);
+  const [guests, inputs, queue, ratings] = await Promise.all([store.listGuests(code), store.listInputs(code), store.listQueue(code), store.listRatings(code)]);
   const playing = queue.find((q) => q.status === "playing");
   const pc = room.pulse_check?.result;
   const fresh = inputs.filter((i) => i.created_at > (room.dj_seen_ts ?? 0));
@@ -122,6 +123,7 @@ export async function runDj(
     fresh.length
       ? `NEW guest input since your last decision (honor it first): ${fresh.map((i) => `[input_id=${i.id}] ${i.guest_name} (${i.kind})`).join(", ")}. If an upcoming track no longer fits, remove it and add one that does.`
       : "",
+    ratingsForPrompt(queue, ratings).length ? `Guest ratings of how well each song matched the vibe (1-5): ${ratingsForPrompt(queue, ratings).join("; ")}.` : "",
     queue.length ? `Already used tonight (never repeat, including other versions): ${usedList(queue).join("; ")}.` : "",
     trigger === "new_input" ? "Reconsider the upcoming queue in light of the new input. Add exactly one track that honors it." : "Choose the next track.",
   ].filter(Boolean).join("\n");

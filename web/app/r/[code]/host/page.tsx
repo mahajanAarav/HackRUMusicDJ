@@ -41,7 +41,10 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   const [snap, setSnap] = useState<Snap>(null);
   const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [clipS, setClipS] = useState(0); // 0 = play every song in full
+  const clipS = 0; // every song plays in full
+  const [playPaused, setPlayPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const mockElapsed = useRef(0);
   const [dev, setDev] = useState(false);
   const [time, setTime] = useState({ ct: 0, dur: 0, pct: 0 });
   const [err, setErr] = useState("");
@@ -111,7 +114,10 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   }, [poll]);
 
   const askDj = useCallback((trigger = "next_song") => guarded(() => api(`/rooms/${code}/dj/next`, { trigger })), [code, guarded]);
-  const advance = useCallback((action: "next" | "skip" = "next") => guarded(() => api(`/rooms/${code}/queue/advance`, { action })), [code, guarded]);
+  const advance = useCallback((action: "next" | "skip" = "next") => guarded(async () => {
+    const r = await api<any>(`/rooms/${code}/queue/advance`, { action });
+    if (!r?.now_playing) player.current?.stopVideo?.(); // queue was empty: don't leave the old video playing under a blank screen
+  }), [code, guarded]);
 
   useEffect(() => {
     if (window.YT?.Player) return;
@@ -136,6 +142,9 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   useEffect(() => {
     if (!started || !playing || lastPlayed.current === playing.id) return;
     lastPlayed.current = playing.id;
+    mockElapsed.current = 0;
+    pausedRef.current = false;
+    setPlayPaused(false);
     if (timer.current) clearTimeout(timer.current);
     (async () => {
       setAnnouncing(true);
@@ -146,8 +155,6 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
         else pendingVideo.current = playing.video_id; // loaded in onReady
       }
       const mock = playing.video_id.startsWith("mock:");
-      const limit = clipS > 0 ? clipS : mock ? 180 : 0; // real videos end on their own (player 'ended' event)
-      if (limit > 0) timer.current = setTimeout(() => advance("next"), limit * 1000);
       if (!mock) {
         // Safety net: if the video never starts (blocked or unavailable), move on instead of sitting silent.
         setTimeout(() => {
@@ -157,6 +164,18 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
       }
     })();
   }, [started, playing, speak, advance, clipS, playerReady]);
+
+  const togglePlayback = () => {
+    const next = !pausedRef.current;
+    pausedRef.current = next;
+    setPlayPaused(next);
+    if (playing && !playing.video_id.startsWith("mock:")) next ? player.current?.pauseVideo?.() : player.current?.playVideo?.();
+  };
+
+  // If the server ended the track (e.g. the DJ skipped it) and nothing replaced it, never leave the old video playing.
+  useEffect(() => {
+    if (started && !playing && player.current?.getPlayerState?.() === 1) player.current.stopVideo();
+  }, [started, playing]);
 
   // Autopilot: react to new guest input, keep the queue topped up, start the next track when idle.
   useEffect(() => {
@@ -176,7 +195,11 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
         width: "100%", height: "100%", playerVars: { playsinline: 1, rel: 0 },
         events: {
           onReady: () => { setPlayerReady(true); if (pendingVideo.current) player.current.loadVideoById(pendingVideo.current); },
-          onStateChange: (ev: any) => ev.data === 0 && advance("next"),
+          onStateChange: (ev: any) => {
+            if (ev.data === 0) advance("next");
+            else if (ev.data === 1) { pausedRef.current = false; setPlayPaused(false); } // playing (also covers the YouTube controls)
+            else if (ev.data === 2) { pausedRef.current = true; setPlayPaused(true); } // paused
+          },
           onError: () => advance("next"), // embedding disabled / removed video: skip it
         },
       });
@@ -184,23 +207,26 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
     return () => clearInterval(t);
   }, [started, advance]);
 
-  // Progress: real playback position when the YouTube player knows it, otherwise elapsed time.
+  // Progress: real videos follow the YouTube player's own clock (a paused video stops the bar); timer-playback tracks count only while playing.
   useEffect(() => {
     if (!playing) { setTime({ ct: 0, dur: 0, pct: 0 }); return; }
     const mock = playing.video_id.startsWith("mock:");
     const t = setInterval(() => {
-      const dur = !mock ? player.current?.getDuration?.() : 0;
-      if (dur > 0 && clipS === 0) {
-        const ct = player.current.getCurrentTime?.() ?? 0;
-        setTime({ ct, dur, pct: Math.min(100, (ct / dur) * 100) });
-      } else {
-        const total = clipS > 0 ? clipS : 180;
-        const ct = (Date.now() - playing.started_at) / 1000;
-        setTime({ ct: Math.min(ct, total), dur: total, pct: Math.min(100, (ct / total) * 100) });
+      if (!mock) {
+        const dur = player.current?.getDuration?.() ?? 0;
+        if (dur > 0) {
+          const ct = player.current.getCurrentTime?.() ?? 0;
+          setTime({ ct, dur, pct: Math.min(100, (ct / dur) * 100) });
+        }
+        return;
       }
+      if (!pausedRef.current) mockElapsed.current += 0.5;
+      const total = 180;
+      setTime({ ct: Math.min(mockElapsed.current, total), dur: total, pct: Math.min(100, (mockElapsed.current / total) * 100) });
+      if (mockElapsed.current >= total) advance("next");
     }, 500);
     return () => clearInterval(t);
-  }, [playing?.id, clipS]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [playing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- derived ----------
   const origin = (publicUrl.trim() || base).replace(/\/+$/, "");
@@ -249,6 +275,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
   // Heart-rate numbers never reach this screen: the room only sees a qualitative feel.
   const feel = snap?.feel as { n: number; trend: string } | undefined;
   const feelText = !feel?.n ? "no scans yet" : feel.trend === "rising" ? "energy rising" : feel.trend === "falling" ? "settling down" : feel.trend === "flat" ? "holding steady" : "reading the room";
+  const ratings: Record<string, { avg: number; n: number }> = snap?.ratings ?? {};
   const impactText = (imp: any) => (imp?.effect === "lift" ? "↑ lifted the room" : imp?.effect === "settle" ? "↓ settled the room" : imp?.effect === "steady" ? "→ held steady" : null);
   const toggleTrace = (id: string) => setOpenTrace((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const vibesIn = inputs.length;
@@ -334,14 +361,11 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                       <>
                         <button className="btn" disabled={busy || !playing} onClick={() => advance("skip")}><Skip width={16} height={16} /> skip</button>
                         <button className="btn" disabled={busy} onClick={() => askDj()}>{busy ? <span className="spinner" /> : <Sparkle width={16} height={16} />} ask dj</button>
-                        <button className={`btn ghost ${paused ? "yellow" : ""}`} onClick={() => setPaused((v) => !v)} title="stop the dj from making requests on its own">{paused ? "▶ resume ai" : "⏸ pause ai"}</button>
+                        <button className="btn" disabled={!playing || announcing} onClick={togglePlayback}>{playPaused ? <><Play width={16} height={16} /> resume</> : <>⏸ pause</>}</button>
+                        {dev && <button className={`btn ghost ${paused ? "yellow" : ""}`} onClick={() => setPaused((v) => !v)} title="dev: stop the dj from making requests on its own">{paused ? "▶ resume ai" : "⏸ pause ai"}</button>}
                       </>
                     )}
-                    <label className="small row" style={{ gap: 6 }}>play
-                      <select className="field" value={clipS} onChange={(ev) => setClipS(Number(ev.target.value))} style={{ width: 120, padding: "6px 8px" }}>
-                        <option value={0}>full songs</option><option value={30}>30s clips</option><option value={60}>60s clips</option><option value={90}>90s clips</option>
-                      </select>
-                    </label>
+
                   </div>
                 </div>
 
@@ -424,6 +448,7 @@ export default function Host({ params }: { params: Promise<{ code: string }> }) 
                     <div className="list-row" key={q.id}>
                       <Cover title={q.song} videoId={q.video_id} size={34} />
                       <div className="grow"><div className="ellipsis" style={{ fontWeight: 700 }}>{q.song}</div><div className="small mut ellipsis">{q.artist}</div></div>
+                      {ratings[q.id] && <span className="chip" title={`${ratings[q.id].n} rating(s)`}>★ {ratings[q.id].avg}</span>}
                       {impactText(imp) && <span className="chip acc">{impactText(imp)}</span>}
                       {q.status === "skipped" && <span className="chip err">skipped</span>}
                     </div>

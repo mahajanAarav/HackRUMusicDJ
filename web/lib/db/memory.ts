@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { now } from "../clock";
-import type { Guest, QueueItem, Room, SongImpact, TraceEvent, VibeInput, VitalsReading } from "../types";
+import type { Guest, QueueItem, Rating, Room, SongImpact, TraceEvent, VibeInput, VitalsReading } from "../types";
 import type { Store } from "./store";
 
 interface RoomData {
@@ -10,6 +10,7 @@ interface RoomData {
   readings: VitalsReading[];
   queue: QueueItem[];
   impacts: SongImpact[];
+  ratings: Rating[];
   trace: TraceEvent[];
 }
 
@@ -30,7 +31,7 @@ export class MemoryStore implements Store {
     do code = Array.from({ length: 4 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join("");
     while (this.rooms.has(code));
     const room: Room = { code, name: name?.trim().slice(0, 40) || `Room ${code}`, vitals_source: source, created_at: now() };
-    this.rooms.set(code, { room, guests: [], inputs: [], readings: [], queue: [], impacts: [], trace: [] });
+    this.rooms.set(code, { room, guests: [], inputs: [], readings: [], queue: [], impacts: [], ratings: [], trace: [] });
     return room;
   }
   async getRoom(code: string) {
@@ -95,6 +96,17 @@ export class MemoryStore implements Store {
   }
   async addImpact(code: string, impact: SongImpact) {
     this.d(code).impacts.push(impact);
+  }
+
+  async setRating(code: string, r: Omit<Rating, "at">) {
+    const d = this.d(code);
+    const i = d.ratings.findIndex((x) => x.queue_id === r.queue_id && x.guest_id === r.guest_id);
+    const rating = { ...r, at: now() };
+    if (i >= 0) d.ratings[i] = rating;
+    else d.ratings.push(rating);
+  }
+  async listRatings(code: string) {
+    return this.d(code).ratings;
   }
 
   async listTrace(code: string, sinceTs = 0) {

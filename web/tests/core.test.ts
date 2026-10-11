@@ -343,3 +343,27 @@ describe("presage cloud client", () => {
     expect(presageConfigured()).toBe(false);
   });
 });
+
+import { ratingsForPrompt, summarizeRatings } from "../lib/dj/ratings";
+describe("song ratings", () => {
+  it("averages ratings per song, one per guest (re-rating replaces)", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    await store.setRating(room.code, { queue_id: "q1", guest_id: "a", value: 5 });
+    await store.setRating(room.code, { queue_id: "q1", guest_id: "b", value: 3 });
+    await store.setRating(room.code, { queue_id: "q1", guest_id: "b", value: 1 }); // replaces b's 3
+    await store.setRating(room.code, { queue_id: "q2", guest_id: "a", value: 4 });
+    const sum = summarizeRatings(await store.listRatings(room.code));
+    expect(sum.q1).toEqual({ avg: 3, n: 2 });
+    expect(sum.q2).toEqual({ avg: 4, n: 1 });
+  });
+  it("shows the DJ how each song was rated, and never exposes who rated what", async () => {
+    const store = new MemoryStore();
+    const room = await store.createRoom("live");
+    const item = await store.addQueueItem(room.code, { song: "Levels", artist: "Avicii", video_id: "v", reason: "r", influenced_by: [], physiological_evidence: { metric: "pulse", summary: "s" }, announcement: "a", energy: 0.9, has_vocals: true });
+    await store.setRating(room.code, { queue_id: item.id, guest_id: "secret-guest-id", value: 2 });
+    const lines = ratingsForPrompt(await store.listQueue(room.code), await store.listRatings(room.code));
+    expect(lines).toEqual(["Levels - Avicii: 2/5 from 1 guest"]);
+    expect(JSON.stringify(lines)).not.toContain("secret-guest-id");
+  });
+});
